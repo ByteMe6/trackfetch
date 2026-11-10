@@ -226,7 +226,7 @@ def download_cover(url: str, destination: Path):
         url,
         timeout=30,
         headers={
-            "User-Agent": "trackfetch/2.2"
+            "User-Agent": "trackfetch/2.2.5"
         },
     )
 
