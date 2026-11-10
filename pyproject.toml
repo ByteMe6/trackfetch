@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "trackfetch"
-version = "2.1.0"
+version = "2.2.0"
 description = "Turn a text file of songs into tagged MP3s: Spotify metadata and cover art, best-match YouTube audio via yt-dlp."
 readme = "README.md"
 license = "GPL-3.0-or-later"
