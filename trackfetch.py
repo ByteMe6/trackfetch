@@ -875,8 +875,13 @@ def apply_config(args, parser, settings):
 
 
 def read_song_file(path: Path):
-    """Read Artist - Title pairs from a text file."""
+    """Read Artist - Title pairs from a text file.
+
+    Returns a (songs, skipped) tuple, where skipped holds the lines that
+    could not be parsed.
+    """
     songs = []
+    skipped = []
 
     for line in path.read_text(
         encoding="utf-8",
@@ -893,7 +898,10 @@ def read_song_file(path: Path):
         if song:
             songs.append(song)
 
-    return songs
+        else:
+            skipped.append(line)
+
+    return songs, skipped
 
 
 def collect_sources(args, settings):
@@ -953,7 +961,16 @@ def main():
         description=(
             "Download music using Spotify metadata "
             "and YouTube audio"
-        )
+        ),
+        epilog=(
+            "A config file with the defaults can be used as well. It is "
+            "looked up in --config, $TRACKFETCH_CONFIG, ./trackfetch.ini, "
+            "$XDG_CONFIG_HOME/trackfetch/trackfetch.ini, "
+            "~/.config/trackfetch/trackfetch.ini and ~/.trackfetch.ini. "
+            "A command-line flag wins over the config file, and the config "
+            "file wins over the built-in default."
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
     )
 
     parser.add_argument(
@@ -993,7 +1010,10 @@ def main():
         "--config",
         type=Path,
         default=None,
-        help="Path to a config file",
+        help=(
+            "Path to a config file "
+            "(default: auto-detected, see below)"
+        ),
     )
 
     parser.add_argument(
@@ -1001,21 +1021,21 @@ def main():
         "--format",
         choices=list(AUDIO_FORMATS),
         default=None,
-        help="Audio format",
+        help="Audio format (default: m4a)",
     )
 
     parser.add_argument(
         "--title-only",
         action="store_true",
         default=None,
-        help="Use only title in filename",
+        help="Use only title in filename (default: off)",
     )
 
     parser.add_argument(
         "--delay",
         type=float,
         default=None,
-        help="Delay between songs in seconds",
+        help="Delay between songs in seconds (default: 1.0)",
     )
 
     parser.add_argument(
@@ -1086,10 +1106,17 @@ def main():
     failed_file = args.output / "failed.txt"
 
     songs = []
+    skipped = []
 
     for source in sources:
         if isinstance(source, Path):
-            songs.extend(read_song_file(source))
+            file_songs, file_skipped = read_song_file(source)
+
+            songs.extend(file_songs)
+
+            skipped.extend(
+                (source, line) for line in file_skipped
+            )
 
         else:
             song = parse_song(source)
@@ -1101,6 +1128,18 @@ def main():
 
     print(f"Found {len(songs)} songs")
     print(f"Already completed: {len(done)}")
+
+    if skipped:
+        print(
+            f"WARNING: skipped {len(skipped)} line(s) "
+            f"that are not 'Artist - Title':"
+        )
+
+        for path, line in skipped[:5]:
+            print(f"  {path}: {line}")
+
+        if len(skipped) > 5:
+            print(f"  ... and {len(skipped) - 5} more")
 
     if config_path:
         print(f"Config: {config_path}")

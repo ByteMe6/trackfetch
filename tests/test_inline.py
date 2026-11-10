@@ -150,6 +150,21 @@ class TestInlineTracks:
         assert exc.value.code == 1
         assert "Artist - Title" in capsys.readouterr().out
 
+    def test_unparsable_lines_in_a_file_are_reported(
+        self, pipeline, monkeypatch, tmp_path, capsys
+    ):
+        songs = tmp_path / "songs.txt"
+        songs.write_text(
+            "Daft Punk -One More Time\nRadiohead - Paranoid Android\n",
+            encoding="utf-8",
+        )
+
+        run_cli(monkeypatch, songs, "-o", tmp_path / "o")
+        log = capsys.readouterr().out
+
+        assert "WARNING: skipped 1 line(s)" in log
+        assert "Daft Punk -One More Time" in log
+
     def test_inline_track_uses_the_output_rules(self, pipeline, monkeypatch, tmp_path):
         out = tmp_path / "o"
         config = tmp_path / "cfg.ini"
@@ -187,4 +202,7 @@ class TestCollectSources:
         songs = tmp_path / "songs.txt"
         songs.write_text("# comment\n\nA - B\nbroken line\nC - D\n", encoding="utf-8")
 
-        assert m.read_song_file(songs) == [("A", "B"), ("C", "D")]
+        parsed, skipped = m.read_song_file(songs)
+
+        assert parsed == [("A", "B"), ("C", "D")]
+        assert skipped == ["broken line"]

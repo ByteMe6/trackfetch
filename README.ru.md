@@ -218,7 +218,8 @@ trackfetch --track "Daft Punk - One More Time" --track "Radiohead - Paranoid And
 
 Файл и треки из аргументов можно смешивать: `trackfetch songs.txt --track "Blur - Song 2"`.
 Разделитель тот же, что и в файле, ` - `, и первое ` - ` отделяет исполнителя
-от названия.
+от названия. Строки без разделителя пропускаются, и trackfetch печатает, сколько
+их пропустил и какие именно.
 
 ### Конфиг-файл
 
@@ -235,8 +236,9 @@ spotify_client_id = твой-client-id
 spotify_client_secret = твой-client-secret
 ```
 
-Любой параметр из таблицы выше можно задать там, в секции `[trackfetch]`.
-Приоритет всегда одинаковый:
+Любой параметр из таблицы выше можно задать там, в секции `[trackfetch]`,
+кроме `--track` — он уместен только в командной строке. Приоритет всегда
+одинаковый:
 
 1. флаг в командной строке,
 2. конфиг-файл,
@@ -244,8 +246,8 @@ spotify_client_secret = твой-client-secret
 
 Конфиг-файл ищется в таком порядке: путь из `--config`, путь из
 `$TRACKFETCH_CONFIG`, `trackfetch.ini` в текущей директории,
-`$XDG_CONFIG_HOME/trackfetch/trackfetch.ini` (обычно
-`~/.config/trackfetch/trackfetch.ini`) и `~/.trackfetch.ini`.
+`$XDG_CONFIG_HOME/trackfetch/trackfetch.ini`,
+`~/.config/trackfetch/trackfetch.ini` и `~/.trackfetch.ini`.
 
 ### Данные Spotify
 

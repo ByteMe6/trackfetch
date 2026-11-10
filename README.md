@@ -235,8 +235,9 @@ spotify_client_id = your-client-id
 spotify_client_secret = your-client-secret
 ```
 
-Every option above can be set there, under the `[trackfetch]` section. The
-precedence is always the same:
+Every option above can be set there, under the `[trackfetch]` section, except
+`--track`, which only makes sense on the command line. The precedence is
+always the same:
 
 1. the command-line flag,
 2. the config file,
@@ -244,8 +245,8 @@ precedence is always the same:
 
 trackfetch looks for the config file in this order: the path given with
 `--config`, the path in `$TRACKFETCH_CONFIG`, `trackfetch.ini` in the current
-directory, `$XDG_CONFIG_HOME/trackfetch/trackfetch.ini` (usually
-`~/.config/trackfetch/trackfetch.ini`) and `~/.trackfetch.ini`.
+directory, `$XDG_CONFIG_HOME/trackfetch/trackfetch.ini`,
+`~/.config/trackfetch/trackfetch.ini` and `~/.trackfetch.ini`.
 
 ### Spotify credentials
 
@@ -291,7 +292,8 @@ Daft Punk - One More Time
 Sufjan Stevens - Mystery of Love - Remastered   ← only the first " - " separates artist and title
 ```
 
-The separator is space, hyphen, space (` - `). Lines without it are skipped. See [`examples/songs.txt`](https://github.com/ByteMe6/trackfetch/blob/master/examples/songs.txt).
+The separator is space, hyphen, space (` - `). Lines without it are skipped,
+and trackfetch prints how many lines it skipped and which ones they were. See [`examples/songs.txt`](https://github.com/ByteMe6/trackfetch/blob/master/examples/songs.txt).
 
 ### Output folder
 
