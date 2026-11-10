@@ -127,6 +127,29 @@ class TestInlineTracks:
         assert exc.value.code == 1
         assert "Could not parse track" in capsys.readouterr().out
 
+    def test_inline_track_without_artist_exits(self, pipeline, monkeypatch, tmp_path, capsys):
+        with pytest.raises(SystemExit) as exc:
+            run_cli(monkeypatch, " - One More Time", "-o", tmp_path / "o")
+
+        assert exc.value.code == 1
+        assert "Could not parse track" in capsys.readouterr().out
+
+    def test_inline_track_without_title_exits(self, pipeline, monkeypatch, tmp_path, capsys):
+        with pytest.raises(SystemExit) as exc:
+            run_cli(monkeypatch, "Daft Punk - ", "-o", tmp_path / "o")
+
+        assert exc.value.code == 1
+        assert "Could not parse track" in capsys.readouterr().out
+
+    def test_wrong_separator_hints_at_the_track_format(
+        self, pipeline, monkeypatch, tmp_path, capsys
+    ):
+        with pytest.raises(SystemExit) as exc:
+            run_cli(monkeypatch, "Daft Punk -One More Time", "-o", tmp_path / "o")
+
+        assert exc.value.code == 1
+        assert "Artist - Title" in capsys.readouterr().out
+
     def test_inline_track_uses_the_output_rules(self, pipeline, monkeypatch, tmp_path):
         out = tmp_path / "o"
         config = tmp_path / "cfg.ini"

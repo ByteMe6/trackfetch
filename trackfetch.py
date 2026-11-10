@@ -921,10 +921,19 @@ def collect_sources(args, settings):
             sources.append(path)
 
         elif " - " in item:
+            if not parse_song(item):
+                raise ValueError(
+                    f"Could not parse track: {item} "
+                    f"(expected 'Artist - Title')"
+                )
+
             sources.append(item)
 
         else:
-            raise ValueError(f"Input file not found: {item}")
+            raise ValueError(
+                f"Input file not found: {item} "
+                f"(if this is a track, use the 'Artist - Title' format)"
+            )
 
     for group in args.track or []:
         for spec in group:

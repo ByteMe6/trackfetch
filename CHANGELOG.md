@@ -6,6 +6,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+- Inline tracks that cannot be parsed, such as `"Artist - "` or `" - Title"`, now report an error instead of being silently skipped.
+- A missing input file now hints at the `Artist - Title` format, so a wrong separator is not mistaken for a missing file.
+
 ## [2.2.5] - 2026-11-10
 
 ### Added
