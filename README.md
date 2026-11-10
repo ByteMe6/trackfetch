@@ -164,7 +164,7 @@ EOF
 trackfetch songs.txt
 ```
 
-The files land in `~/Music/trackfetch/`.
+The files land in the current directory.
 
 ## Playlists from streaming services
 
@@ -182,16 +182,19 @@ trackfetch "My Playlist.txt" -o ~/Music/"My Playlist"
 ## Usage
 
 ```text
-trackfetch [-h] [-o OUTPUT] [-f {mp3,m4a,opus}] [--title-only] [--delay DELAY] input
+trackfetch [-h] [-o OUTPUT] [--config CONFIG] [-f {mp3,m4a,opus}] [--title-only] [--delay DELAY] [--spotify-client-id ID] [--spotify-client-secret SECRET] [input]
 ```
 
 | Option | Default | What it does |
 | --- | --- | --- |
-| `input` | required | Text file with one `Artist - Title` per line |
-| `-o`, `--output` | `~/Music/trackfetch` | Folder to save the files in. It's created if it doesn't exist. |
-| `-f`, `--format` | `mp3` | Audio format: `mp3`, `m4a` or `opus`. See [Audio formats](#audio-formats). |
-| `--title-only` | off | Name files `Title.mp3` instead of `Artist - Title.mp3` |
+| `input` | required | Text file with one `Artist - Title` per line. Can also be set in the [config file](#configuration-file). |
+| `-o`, `--output` | current directory | Folder to save the files in. It's created if it doesn't exist. |
+| `--config` | auto-detected | Path to a [config file](#configuration-file). |
+| `-f`, `--format` | `m4a` | Audio format: `mp3`, `m4a` or `opus`. See [Audio formats](#audio-formats). |
+| `--title-only` | off | Name files `Title.m4a` instead of `Artist - Title.m4a` |
 | `--delay` | `1.0` | Seconds to wait between songs. Raise it for long lists. |
+| `--spotify-client-id` | `$SPOTIFY_CLIENT_ID` | Spotify API client ID. See [Spotify credentials](#spotify-credentials). |
+| `--spotify-client-secret` | `$SPOTIFY_CLIENT_SECRET` | Spotify API client secret. |
 
 ```bash
 trackfetch songs.txt -o ~/Music/RoadTrip          # save to a specific folder
@@ -200,13 +203,66 @@ trackfetch big-list.txt --delay 3                 # go easy on rate limits
 trackfetch songs.txt --format opus                # original YouTube audio, no re-encode
 ```
 
+### Configuration file
+
+Put your defaults in an INI file and forget the flags:
+
+```ini
+[trackfetch]
+output = ~/Music/trackfetch
+format = m4a
+title_only = false
+delay = 1.0
+input = ~/songs.txt
+spotify_client_id = your-client-id
+spotify_client_secret = your-client-secret
+```
+
+Every option above can be set there, under the `[trackfetch]` section. The
+precedence is always the same:
+
+1. the command-line flag,
+2. the config file,
+3. the built-in default (the current directory for the output folder).
+
+trackfetch looks for the config file in this order: the path given with
+`--config`, the path in `$TRACKFETCH_CONFIG`, `trackfetch.ini` in the current
+directory, `$XDG_CONFIG_HOME/trackfetch/trackfetch.ini` (usually
+`~/.config/trackfetch/trackfetch.ini`) and `~/.trackfetch.ini`.
+
+### Spotify credentials
+
+trackfetch needs a Spotify client ID and secret to read the metadata. Give
+them in whichever way suits you:
+
+```bash
+# in the config file
+[trackfetch]
+spotify_client_id = your-client-id
+spotify_client_secret = your-client-secret
+```
+
+```bash
+# in the environment
+export SPOTIFY_CLIENT_ID='your-client-id'
+export SPOTIFY_CLIENT_SECRET='your-client-secret'
+```
+
+```bash
+# on the command line
+trackfetch songs.txt --spotify-client-id your-id --spotify-client-secret your-secret
+```
+
+The flag wins over the config file, and the config file wins over the
+environment variable.
+
 ### Audio formats
 
 | Format | What you get | Plays on |
 | --- | --- | --- |
-| `mp3` (default) | YouTube's audio **re-encoded** to the best VBR MP3. A second lossy encode, so slightly below the source | everything, including old players and car stereos |
+| `m4a` (default) | YouTube's **original** AAC audio when available, copied without re-encoding | Apple devices, iTunes, most players |
 | `opus` | YouTube's **original** Opus audio, copied without re-encoding. The best quality you can get | most modern players, Android, browsers; not iTunes or older devices |
-| `m4a` | YouTube's **original** AAC audio when available, copied without re-encoding | Apple devices, iTunes, most players |
+| `mp3` | YouTube's audio **re-encoded** to the best VBR MP3. A second lossy encode, so slightly below the source | everything, including old players and car stereos |
 
 All three get the same tags and embedded cover art. `done.txt` doesn't track the format, so use a separate `-o` folder for each format.
 
@@ -223,9 +279,9 @@ The separator is space, hyphen, space (` - `). Lines without it are skipped. See
 ### Output folder
 
 ```text
-~/Music/trackfetch/
-├── Daft Punk - One More Time.mp3
-├── Radiohead - Paranoid Android.mp3
+./
+├── Daft Punk - One More Time.m4a
+├── Radiohead - Paranoid Android.m4a
 ├── done.txt      ← finished songs, skipped on the next run
 └── failed.txt    ← "Artist - Title | reason" for each song that failed
 ```
@@ -233,7 +289,7 @@ The separator is space, hyphen, space (` - `). Lines without it are skipped. See
 **Retry failures** by stripping the reasons from `failed.txt` and running it again:
 
 ```bash
-cut -d '|' -f 1 ~/Music/trackfetch/failed.txt > retry.txt
+cut -d '|' -f 1 ./failed.txt > retry.txt
 trackfetch retry.txt
 ```
 

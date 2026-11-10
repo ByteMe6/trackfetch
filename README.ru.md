@@ -164,7 +164,7 @@ EOF
 trackfetch songs.txt
 ```
 
-Файлы появятся в `~/Music/trackfetch/`.
+Файлы появятся в текущей директории.
 
 ## Плейлисты из стриминговых сервисов
 
@@ -182,16 +182,19 @@ trackfetch "My Playlist.txt" -o ~/Music/"My Playlist"
 ## Использование
 
 ```text
-trackfetch [-h] [-o OUTPUT] [-f {mp3,m4a,opus}] [--title-only] [--delay DELAY] input
+trackfetch [-h] [-o OUTPUT] [--config CONFIG] [-f {mp3,m4a,opus}] [--title-only] [--delay DELAY] [--spotify-client-id ID] [--spotify-client-secret SECRET] [input]
 ```
 
 | Параметр | По умолчанию | Что делает |
 | --- | --- | --- |
-| `input` | обязательный | Текстовый файл, где на каждой строке `Исполнитель - Название` |
-| `-o`, `--output` | `~/Music/trackfetch` | Папка для файлов. Если её нет, она будет создана. |
-| `-f`, `--format` | `mp3` | Формат звука: `mp3`, `m4a` или `opus`. См. [Форматы звука](#форматы-звука). |
-| `--title-only` | выключен | Называть файлы `Название.mp3` вместо `Исполнитель - Название.mp3` |
+| `input` | обязательный | Текстовый файл, где на каждой строке `Исполнитель - Название`. Можно задать и в [конфиг-файле](#конфиг-файл) |
+| `-o`, `--output` | текущая директория | Папка для файлов. Если её нет, она будет создана. |
+| `--config` | ищется автоматически | Путь к [конфиг-файлу](#конфиг-файл). |
+| `-f`, `--format` | `m4a` | Формат звука: `mp3`, `m4a` или `opus`. См. [Форматы звука](#форматы-звука). |
+| `--title-only` | выключен | Называть файлы `Название.m4a` вместо `Исполнитель - Название.m4a` |
 | `--delay` | `1.0` | Пауза между песнями в секундах. Для длинных списков её стоит увеличить. |
+| `--spotify-client-id` | `$SPOTIFY_CLIENT_ID` | Client ID для Spotify API. См. [Данные Spotify](#данные-spotify). |
+| `--spotify-client-secret` | `$SPOTIFY_CLIENT_SECRET` | Client secret для Spotify API. |
 
 ```bash
 trackfetch songs.txt -o ~/Music/RoadTrip          # сохранить в конкретную папку
@@ -200,13 +203,65 @@ trackfetch big-list.txt --delay 3                 # бережнее к лими
 trackfetch songs.txt --format opus                # оригинальный звук YouTube без перекодирования
 ```
 
+### Конфиг-файл
+
+Все дефолты можно вынести в INI-файл и забыть про флаги:
+
+```ini
+[trackfetch]
+output = ~/Music/trackfetch
+format = m4a
+title_only = false
+delay = 1.0
+input = ~/songs.txt
+spotify_client_id = твой-client-id
+spotify_client_secret = твой-client-secret
+```
+
+Любой параметр из таблицы выше можно задать там, в секции `[trackfetch]`.
+Приоритет всегда одинаковый:
+
+1. флаг в командной строке,
+2. конфиг-файл,
+3. встроенное значение по умолчанию (для папки вывода — текущая директория).
+
+Конфиг-файл ищется в таком порядке: путь из `--config`, путь из
+`$TRACKFETCH_CONFIG`, `trackfetch.ini` в текущей директории,
+`$XDG_CONFIG_HOME/trackfetch/trackfetch.ini` (обычно
+`~/.config/trackfetch/trackfetch.ini`) и `~/.trackfetch.ini`.
+
+### Данные Spotify
+
+trackfetch нужен client ID и client secret Spotify, чтобы читать метаданные.
+Их можно задать любым удобным способом:
+
+```bash
+# в конфиг-файле
+[trackfetch]
+spotify_client_id = твой-client-id
+spotify_client_secret = твой-client-secret
+```
+
+```bash
+# в переменных окружения
+export SPOTIFY_CLIENT_ID='твой-client-id'
+export SPOTIFY_CLIENT_SECRET='твой-client-secret'
+```
+
+```bash
+# флагами в командной строке
+trackfetch songs.txt --spotify-client-id твой-id --spotify-client-secret твой-secret
+```
+
+Флаг важнее конфиг-файла, а конфиг-файл важнее переменной окружения.
+
 ### Форматы звука
 
 | Формат | Что получаешь | Где играет |
 | --- | --- | --- |
-| `mp3` (по умолчанию) | Звук YouTube, **перекодированный** в MP3 VBR максимального качества. Это повторное сжатие с потерями, поэтому чуть хуже исходника | везде, включая старые плееры и автомагнитолы |
+| `m4a` (по умолчанию) | **Оригинальный** звук YouTube в AAC, если он есть, скопированный без перекодирования | устройства Apple, iTunes, большинство плееров |
 | `opus` | **Оригинальный** звук YouTube в Opus, скопированный без перекодирования. Лучшее доступное качество | большинство современных плееров, Android, браузеры; не iTunes и не старые устройства |
-| `m4a` | **Оригинальный** звук YouTube в AAC, если он есть, скопированный без перекодирования | устройства Apple, iTunes, большинство плееров |
+| `mp3` | Звук YouTube, **перекодированный** в MP3 VBR максимального качества. Это повторное сжатие с потерями, поэтому чуть хуже исходника | везде, включая старые плееры и автомагнитолы |
 
 Во всех трёх форматах одинаковые теги и встроенная обложка. `done.txt` не учитывает формат, поэтому для каждого формата указывай отдельную папку `-o`.
 
@@ -223,9 +278,9 @@ Sufjan Stevens - Mystery of Love - Remastered   ← исполнителя и н
 ### Папка с результатами
 
 ```text
-~/Music/trackfetch/
-├── Daft Punk - One More Time.mp3
-├── Radiohead - Paranoid Android.mp3
+./
+├── Daft Punk - One More Time.m4a
+├── Radiohead - Paranoid Android.m4a
 ├── done.txt      ← готовые песни, при следующем запуске пропускаются
 └── failed.txt    ← "Исполнитель - Название | причина" для каждой неудачной песни
 ```
@@ -233,7 +288,7 @@ Sufjan Stevens - Mystery of Love - Remastered   ← исполнителя и н
 **Повторить неудачные:** убери причины из `failed.txt` и запусти ещё раз:
 
 ```bash
-cut -d '|' -f 1 ~/Music/trackfetch/failed.txt > retry.txt
+cut -d '|' -f 1 ./failed.txt > retry.txt
 trackfetch retry.txt
 ```
 
