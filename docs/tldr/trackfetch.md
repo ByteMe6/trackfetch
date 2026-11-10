@@ -16,6 +16,10 @@
 
 `trackfetch {{path/to/songs.txt}} {{[-f|--format]}} {{opus|m4a}}`
 
+- Download a few tracks without a text file:
+
+`trackfetch {{"Artist - Title"}} {{"Another Artist - Another Title"}}`
+
 - Name the files by song title only, instead of `Artist - Title`:
 
 `trackfetch {{path/to/songs.txt}} --title-only`

@@ -182,12 +182,13 @@ trackfetch "My Playlist.txt" -o ~/Music/"My Playlist"
 ## Usage
 
 ```text
-trackfetch [-h] [-o OUTPUT] [--config CONFIG] [-f {mp3,m4a,opus}] [--title-only] [--delay DELAY] [--spotify-client-id ID] [--spotify-client-secret SECRET] [input]
+trackfetch [-h] [--track ARTIST - TITLE ...] [-o OUTPUT] [--config CONFIG] [-f {mp3,m4a,opus}] [--title-only] [--delay DELAY] [--spotify-client-id ID] [--spotify-client-secret SECRET] [INPUT ...]
 ```
 
 | Option | Default | What it does |
 | --- | --- | --- |
-| `input` | required | Text file with one `Artist - Title` per line. Can also be set in the [config file](#configuration-file). |
+| `INPUT` | required | Text file with one `Artist - Title` per line, or an inline `Artist - Title` track. Can also be set in the [config file](#configuration-file). |
+| `--track` | — | Track to download inline, `Artist - Title`. Can be given several times. |
 | `-o`, `--output` | current directory | Folder to save the files in. It's created if it doesn't exist. |
 | `--config` | auto-detected | Path to a [config file](#configuration-file). |
 | `-f`, `--format` | `m4a` | Audio format: `mp3`, `m4a` or `opus`. See [Audio formats](#audio-formats). |
@@ -201,7 +202,23 @@ trackfetch songs.txt -o ~/Music/RoadTrip          # save to a specific folder
 trackfetch songs.txt -o /media/usb --title-only   # short names for a car stereo
 trackfetch big-list.txt --delay 3                 # go easy on rate limits
 trackfetch songs.txt --format opus                # original YouTube audio, no re-encode
+trackfetch "Daft Punk - One More Time"             # one track, no file needed
+trackfetch "A - B" "C - D" --track "E - F"         # a few tracks in one go
 ```
+
+### Inline tracks
+
+Skip the file and name the tracks right on the command line:
+
+```bash
+trackfetch "Daft Punk - One More Time"
+trackfetch "Daft Punk - One More Time" "Radiohead - Paranoid Android"
+trackfetch --track "Daft Punk - One More Time" --track "Radiohead - Paranoid Android"
+```
+
+A file and inline tracks can be mixed: `trackfetch songs.txt --track "Blur - Song 2"`.
+The separator is the same ` - ` as in the file, and the first ` - ` splits the
+artist from the title.
 
 ### Configuration file
 

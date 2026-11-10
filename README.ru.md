@@ -182,12 +182,13 @@ trackfetch "My Playlist.txt" -o ~/Music/"My Playlist"
 ## Использование
 
 ```text
-trackfetch [-h] [-o OUTPUT] [--config CONFIG] [-f {mp3,m4a,opus}] [--title-only] [--delay DELAY] [--spotify-client-id ID] [--spotify-client-secret SECRET] [input]
+trackfetch [-h] [--track ARTIST - TITLE ...] [-o OUTPUT] [--config CONFIG] [-f {mp3,m4a,opus}] [--title-only] [--delay DELAY] [--spotify-client-id ID] [--spotify-client-secret SECRET] [INPUT ...]
 ```
 
 | Параметр | По умолчанию | Что делает |
 | --- | --- | --- |
-| `input` | обязательный | Текстовый файл, где на каждой строке `Исполнитель - Название`. Можно задать и в [конфиг-файле](#конфиг-файл) |
+| `INPUT` | обязательный | Текстовый файл, где на каждой строке `Исполнитель - Название`, или трек прямо в аргументе. Можно задать и в [конфиг-файле](#конфиг-файл) |
+| `--track` | — | Трек для скачивания прямо из аргументов, `Исполнитель - Название`. Можно указать несколько раз. |
 | `-o`, `--output` | текущая директория | Папка для файлов. Если её нет, она будет создана. |
 | `--config` | ищется автоматически | Путь к [конфиг-файлу](#конфиг-файл). |
 | `-f`, `--format` | `m4a` | Формат звука: `mp3`, `m4a` или `opus`. См. [Форматы звука](#форматы-звука). |
@@ -201,7 +202,23 @@ trackfetch songs.txt -o ~/Music/RoadTrip          # сохранить в кон
 trackfetch songs.txt -o /media/usb --title-only   # короткие имена для автомагнитолы
 trackfetch big-list.txt --delay 3                 # бережнее к лимитам запросов
 trackfetch songs.txt --format opus                # оригинальный звук YouTube без перекодирования
+trackfetch "Daft Punk - One More Time"             # один трек, файл не нужен
+trackfetch "A - B" "C - D" --track "E - F"         # несколько треков за раз
 ```
+
+### Треки прямо в аргументах
+
+Можно не заводить файл, а назвать треки прямо в командной строке:
+
+```bash
+trackfetch "Daft Punk - One More Time"
+trackfetch "Daft Punk - One More Time" "Radiohead - Paranoid Android"
+trackfetch --track "Daft Punk - One More Time" --track "Radiohead - Paranoid Android"
+```
+
+Файл и треки из аргументов можно смешивать: `trackfetch songs.txt --track "Blur - Song 2"`.
+Разделитель тот же, что и в файле, ` - `, и первое ` - ` отделяет исполнителя
+от названия.
 
 ### Конфиг-файл
 
