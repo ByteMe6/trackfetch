@@ -6,6 +6,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+- Pointing `-o` at an existing file now gives a clear error instead of a Python traceback.
+- The run summary is flushed before the downloads start, so it no longer appears after the first song's progress output.
+- An input file with no usable songs now says `No songs to download` instead of ending silently with an empty summary.
+- The `Already completed` count now says that it comes from `done.txt`.
+
 ## [2.2.6] - 2026-11-10
 
 ### Added

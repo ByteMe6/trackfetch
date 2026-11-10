@@ -150,6 +150,26 @@ class TestInlineTracks:
         assert exc.value.code == 1
         assert "Artist - Title" in capsys.readouterr().out
 
+    def test_output_path_that_is_a_file_exits(self, pipeline, monkeypatch, tmp_path, capsys):
+        target = tmp_path / "afile"
+        target.write_bytes(b"")
+
+        with pytest.raises(SystemExit) as exc:
+            run_cli(monkeypatch, "Daft Punk - One More Time", "-o", target)
+
+        assert exc.value.code == 1
+        assert "not a directory" in capsys.readouterr().out
+
+    def test_empty_input_file_exits(self, pipeline, monkeypatch, tmp_path, capsys):
+        songs = tmp_path / "songs.txt"
+        songs.write_text("# only a comment\n\n", encoding="utf-8")
+
+        with pytest.raises(SystemExit) as exc:
+            run_cli(monkeypatch, songs, "-o", tmp_path / "o")
+
+        assert exc.value.code == 0
+        assert "No songs to download" in capsys.readouterr().out
+
     def test_unparsable_lines_in_a_file_are_reported(
         self, pipeline, monkeypatch, tmp_path, capsys
     ):

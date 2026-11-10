@@ -187,7 +187,7 @@ trackfetch [-h] [--track ARTIST - TITLE ...] [-o OUTPUT] [--config CONFIG] [-f {
 
 | Option | Default | What it does |
 | --- | --- | --- |
-| `INPUT` | required | Text file with one `Artist - Title` per line, or an inline `Artist - Title` track. Can also be set in the [config file](#configuration-file). |
+| `INPUT` | optional | Text file with one `Artist - Title` per line, or an inline `Artist - Title` track. Can also be set in the [config file](#configuration-file). |
 | `--track` | — | Track to download inline, `Artist - Title`. Can be given several times. |
 | `-o`, `--output` | current directory | Folder to save the files in. It's created if it doesn't exist. |
 | `--config` | auto-detected | Path to a [config file](#configuration-file). |

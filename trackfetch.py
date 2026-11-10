@@ -1097,16 +1097,12 @@ def main():
         )
         sys.exit(1)
 
-    args.output.mkdir(
-        parents=True,
-        exist_ok=True,
-    )
-
-    done_file = args.output / "done.txt"
-    failed_file = args.output / "failed.txt"
+    if args.output.exists() and not args.output.is_dir():
+        print(f"ERROR: Output path is not a directory: {args.output}")
+        sys.exit(1)
 
     songs = []
-    skipped = []
+    skipped_lines = []
 
     for source in sources:
         if isinstance(source, Path):
@@ -1114,7 +1110,7 @@ def main():
 
             songs.extend(file_songs)
 
-            skipped.extend(
+            skipped_lines.extend(
                 (source, line) for line in file_skipped
             )
 
@@ -1124,27 +1120,41 @@ def main():
             if song:
                 songs.append(song)
 
+    if not songs:
+        print("No songs to download.")
+        sys.exit(0)
+
+    args.output.mkdir(
+        parents=True,
+        exist_ok=True,
+    )
+
+    done_file = args.output / "done.txt"
+    failed_file = args.output / "failed.txt"
+
     done = read_done(done_file)
 
     print(f"Found {len(songs)} songs")
-    print(f"Already completed: {len(done)}")
+    print(f"Already completed: {len(done)} (from done.txt)")
 
-    if skipped:
+    if skipped_lines:
         print(
-            f"WARNING: skipped {len(skipped)} line(s) "
+            f"WARNING: skipped {len(skipped_lines)} line(s) "
             f"that are not 'Artist - Title':"
         )
 
-        for path, line in skipped[:5]:
+        for path, line in skipped_lines[:5]:
             print(f"  {path}: {line}")
 
-        if len(skipped) > 5:
-            print(f"  ... and {len(skipped) - 5} more")
+        if len(skipped_lines) > 5:
+            print(f"  ... and {len(skipped_lines) - 5} more")
 
     if config_path:
         print(f"Config: {config_path}")
 
     print(f"Output: {args.output}")
+
+    sys.stdout.flush()
 
     sp = get_spotify(args)
 
