@@ -3,6 +3,7 @@
 
 import argparse
 import base64
+import configparser
 import json
 import os
 import re
@@ -33,6 +34,13 @@ from mutagen.oggopus import OggOpus
 from spotipy.oauth2 import SpotifyClientCredentials
 
 YTDLP_REMOTE_COMPONENTS = "ejs:github"
+
+CONFIG_SECTION = "trackfetch"
+CONFIG_FILENAME = "trackfetch.ini"
+CONFIG_ENV = "TRACKFETCH_CONFIG"
+
+DEFAULT_FORMAT = "m4a"
+DEFAULT_DELAY = 1.0
 
 AUDIO_FORMATS = {
     "mp3": [],
@@ -84,13 +92,31 @@ def parse_song(line: str):
     return artist, title
 
 
-def get_spotify():
-    client_id = os.getenv("SPOTIFY_CLIENT_ID")
-    client_secret = os.getenv("SPOTIFY_CLIENT_SECRET")
+def spotify_credentials(args=None):
+    """Spotify credentials: flag > config file > environment variable."""
+    client_id = None
+    client_secret = None
+
+    if args is not None:
+        client_id = getattr(args, "spotify_client_id", None)
+        client_secret = getattr(args, "spotify_client_secret", None)
+
+    client_id = client_id or os.getenv("SPOTIFY_CLIENT_ID")
+    client_secret = client_secret or os.getenv("SPOTIFY_CLIENT_SECRET")
+
+    return client_id, client_secret
+
+
+def get_spotify(args=None):
+    client_id, client_secret = spotify_credentials(args)
 
     if not client_id or not client_secret:
         print("\nERROR: Spotify credentials not found.")
-        print("Set:")
+        print("Set them in the config file:")
+        print("[trackfetch]")
+        print("spotify_client_id = '...'")
+        print("spotify_client_secret = '...'")
+        print("or in the environment:")
         print("export SPOTIFY_CLIENT_ID='...'")
         print("export SPOTIFY_CLIENT_SECRET='...'")
         sys.exit(1)
@@ -695,6 +721,159 @@ def process_song(
     return True, "downloaded"
 
 
+def config_candidates():
+    """Config file locations, in the order they are looked up."""
+    candidates = []
+
+    env = os.getenv(CONFIG_ENV)
+
+    if env:
+        candidates.append(Path(env).expanduser())
+
+    candidates.append(Path.cwd() / CONFIG_FILENAME)
+
+    xdg = os.getenv("XDG_CONFIG_HOME")
+
+    if xdg:
+        candidates.append(
+            Path(xdg).expanduser() / "trackfetch" / CONFIG_FILENAME
+        )
+
+    candidates.append(
+        Path.home() / ".config" / "trackfetch" / CONFIG_FILENAME
+    )
+    candidates.append(Path.home() / CONFIG_FILENAME)
+
+    return candidates
+
+
+def find_config_file(explicit=None):
+    """Return the config file to use, or None if there is none."""
+    if explicit is not None:
+        return Path(explicit).expanduser()
+
+    for candidate in config_candidates():
+        if candidate.is_file():
+            return candidate
+
+    return None
+
+
+def load_config(explicit=None):
+    """Read settings from a config file.
+
+    Returns a (settings, path) tuple. Settings is empty when no config file
+    exists. Raises FileNotFoundError when an explicitly requested file is
+    missing, and configparser.Error when the file cannot be parsed.
+    """
+    config_path = find_config_file(explicit)
+
+    if config_path is None:
+        return {}, None
+
+    if not config_path.is_file():
+        raise FileNotFoundError(f"Config file not found: {config_path}")
+
+    parser = configparser.ConfigParser()
+
+    with config_path.open(encoding="utf-8") as file:
+        parser.read_file(file)
+
+    settings = dict(parser.defaults())
+
+    if parser.has_section(CONFIG_SECTION):
+        settings.update(dict(parser[CONFIG_SECTION]))
+
+    return settings, config_path
+
+
+def config_str_value(settings, key):
+    """Read a plain string setting, or None when it is missing or blank."""
+    value = (settings.get(key) or "").strip()
+
+    if not value:
+        return None
+
+    return value
+
+
+def config_path_value(settings, key):
+    """Read a path-like setting, or None when it is missing or blank."""
+    value = config_str_value(settings, key)
+
+    if value is None:
+        return None
+
+    return Path(value).expanduser()
+
+
+def resolve_output(cli_output, settings):
+    """Pick the output directory: flag > config file > current directory."""
+    if cli_output is not None:
+        return Path(cli_output).expanduser()
+
+    from_config = config_path_value(settings, "output")
+
+    if from_config is not None:
+        return from_config
+
+    return Path.cwd()
+
+
+def coerce_config_value(action, raw):
+    """Convert a raw config value into the type the CLI option expects."""
+    if action.type is Path:
+        return Path(raw).expanduser()
+
+    if action.type is float:
+        return float(raw)
+
+    if action.type is int:
+        return int(raw)
+
+    if isinstance(action, argparse._StoreTrueAction):
+        return raw.lower() in ("1", "true", "yes", "on")
+
+    return raw
+
+
+def apply_config(args, parser, settings):
+    """Fill options that were not given on the command line from the config.
+
+    The flag always wins, the config file is the second source, and the
+    built-in default is the last one.
+    """
+    for action in parser._actions:
+        dest = action.dest
+
+        if dest in ("help", "version", "config"):
+            continue
+
+        if getattr(args, dest, None) is not None:
+            continue
+
+        raw = config_str_value(settings, dest)
+
+        if raw is None:
+            continue
+
+        try:
+            value = coerce_config_value(action, raw)
+
+        except (TypeError, ValueError) as error:
+            raise ValueError(
+                f"Invalid value for '{dest}' in config file: {raw} ({error})"
+            ) from error
+
+        if action.choices and value not in action.choices:
+            raise ValueError(
+                f"Unknown value for '{dest}' in config file: {raw} "
+                f"(choose from {', '.join(action.choices)})"
+            )
+
+        setattr(args, dest, value)
+
+
 def main():
     parser = argparse.ArgumentParser(
         description=(
@@ -706,6 +885,7 @@ def main():
     parser.add_argument(
         "input",
         type=Path,
+        nargs="?",
         help="Text file with Artist - Title",
     )
 
@@ -713,32 +893,93 @@ def main():
         "-o",
         "--output",
         type=Path,
-        default=Path.home() / "Music" / "trackfetch",
-        help="Output directory",
+        default=None,
+        help=(
+            "Output directory "
+            "(overrides the config file, "
+            "defaults to the current directory)"
+        ),
+    )
+
+    parser.add_argument(
+        "--config",
+        type=Path,
+        default=None,
+        help="Path to a config file",
     )
 
     parser.add_argument(
         "-f",
         "--format",
         choices=list(AUDIO_FORMATS),
-        default="mp3",
+        default=None,
         help="Audio format",
     )
 
     parser.add_argument(
         "--title-only",
         action="store_true",
+        default=None,
         help="Use only title in filename",
     )
 
     parser.add_argument(
         "--delay",
         type=float,
-        default=1.0,
+        default=None,
         help="Delay between songs in seconds",
     )
 
+    parser.add_argument(
+        "--spotify-client-id",
+        default=None,
+        help="Spotify client ID (overrides the config file and the env)",
+    )
+
+    parser.add_argument(
+        "--spotify-client-secret",
+        default=None,
+        help="Spotify client secret (overrides the config file and the env)",
+    )
+
     args = parser.parse_args()
+
+    try:
+        settings, config_path = load_config(args.config)
+
+    except FileNotFoundError as error:
+        print(f"ERROR: {error}")
+        sys.exit(1)
+
+    except configparser.Error as error:
+        print(f"ERROR: Invalid config file: {error}")
+        sys.exit(1)
+
+    try:
+        apply_config(args, parser, settings)
+
+    except ValueError as error:
+        print(f"ERROR: {error}")
+        sys.exit(1)
+
+    if args.output is None:
+        args.output = resolve_output(None, settings)
+
+    if args.format is None:
+        args.format = DEFAULT_FORMAT
+
+    if args.title_only is None:
+        args.title_only = False
+
+    if args.delay is None:
+        args.delay = DEFAULT_DELAY
+
+    if args.input is None:
+        print(
+            "ERROR: No input file. "
+            "Pass it as an argument or set 'input' in the config file."
+        )
+        sys.exit(1)
 
     if not args.input.exists():
         print(f"ERROR: Input file not found: {args.input}")
@@ -773,9 +1014,13 @@ def main():
 
     print(f"Found {len(songs)} songs")
     print(f"Already completed: {len(done)}")
+
+    if config_path:
+        print(f"Config: {config_path}")
+
     print(f"Output: {args.output}")
 
-    sp = get_spotify()
+    sp = get_spotify(args)
 
     success = 0
     skipped = 0

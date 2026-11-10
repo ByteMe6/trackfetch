@@ -48,7 +48,7 @@ def pipeline(monkeypatch):
     monkeypatch.setattr(m, "find_youtube_video", lambda artist, title: state["video"])
     monkeypatch.setattr(m, "download_audio", fake_download_audio)
     monkeypatch.setattr(m, "download_cover", fake_download_cover)
-    monkeypatch.setattr(m, "get_spotify", lambda: object())
+    monkeypatch.setattr(m, "get_spotify", lambda *a, **k: object())
     monkeypatch.setattr(m.time, "sleep", lambda s: None)
     return state
 
@@ -173,7 +173,7 @@ class TestMain:
         assert "Found 2 songs" in log
         assert "SUCCESS: 1" in log
         assert "FAILED: 1" in log
-        assert (out / "Daft Punk - One More Time.mp3").exists()
+        assert (out / "Daft Punk - One More Time.m4a").exists()
         assert (out / "done.txt").read_text(encoding="utf-8") == "Daft Punk - One More Time\n"
         assert (out / "failed.txt").read_text(
             encoding="utf-8"
@@ -204,7 +204,7 @@ class TestMain:
         songs.write_text("Daft Punk - One More Time\n", encoding="utf-8")
         out = tmp_path / "o"
         out.mkdir()
-        (out / "Daft Punk - One More Time.mp3").write_bytes(b"")
+        (out / "Daft Punk - One More Time.m4a").write_bytes(b"")
 
         run_cli(monkeypatch, songs, "-o", out)
         log = capsys.readouterr().out
@@ -220,12 +220,12 @@ class TestMain:
         assert (out / "Daft Punk - One More Time.opus").exists()
         assert pipeline["formats"] == ["opus"]
 
-    def test_default_format_is_mp3(self, pipeline, monkeypatch, tmp_path):
+    def test_default_format_is_m4a(self, pipeline, monkeypatch, tmp_path):
         songs = tmp_path / "songs.txt"
         songs.write_text("Daft Punk - One More Time\n", encoding="utf-8")
 
         run_cli(monkeypatch, songs, "-o", tmp_path / "o")
-        assert pipeline["formats"] == ["mp3"]
+        assert pipeline["formats"] == ["m4a"]
 
     def test_rejects_unknown_format(self, monkeypatch, tmp_path, capsys):
         songs = tmp_path / "songs.txt"
