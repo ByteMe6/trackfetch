@@ -261,7 +261,7 @@ class TestMainWithConfig:
             run_cli(monkeypatch)
 
         assert exc.value.code == 1
-        assert "No input file" in capsys.readouterr().out
+        assert "No input" in capsys.readouterr().out
 
     def test_input_can_come_from_the_config(self, pipeline, monkeypatch, tmp_path):
         songs = tmp_path / "songs.txt"

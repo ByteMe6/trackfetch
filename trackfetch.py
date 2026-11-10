@@ -846,7 +846,7 @@ def apply_config(args, parser, settings):
     for action in parser._actions:
         dest = action.dest
 
-        if dest in ("help", "version", "config"):
+        if dest in ("help", "version", "config", "inputs", "track"):
             continue
 
         if getattr(args, dest, None) is not None:
@@ -874,6 +874,71 @@ def apply_config(args, parser, settings):
         setattr(args, dest, value)
 
 
+def read_song_file(path: Path):
+    """Read Artist - Title pairs from a text file."""
+    songs = []
+
+    for line in path.read_text(
+        encoding="utf-8",
+        errors="replace",
+    ).splitlines():
+
+        line = line.strip()
+
+        if not line or line.startswith("#"):
+            continue
+
+        song = parse_song(line)
+
+        if song:
+            songs.append(song)
+
+    return songs
+
+
+def collect_sources(args, settings):
+    """Build the ordered list of inputs: file paths and inline tracks.
+
+    Every item is either a Path to a text file or an inline
+    "Artist - Title" string.
+    """
+    sources = []
+
+    config_input = config_str_value(settings, "input")
+
+    if config_input:
+        path = Path(config_input).expanduser()
+
+        if not path.is_file():
+            raise ValueError(f"Input file not found: {path}")
+
+        sources.append(path)
+
+    for item in args.inputs:
+        path = Path(item).expanduser()
+
+        if path.is_file():
+            sources.append(path)
+
+        elif " - " in item:
+            sources.append(item)
+
+        else:
+            raise ValueError(f"Input file not found: {item}")
+
+    for group in args.track or []:
+        for spec in group:
+            if not parse_song(spec):
+                raise ValueError(
+                    f"Could not parse track: {spec} "
+                    f"(expected 'Artist - Title')"
+                )
+
+            sources.append(spec)
+
+    return sources
+
+
 def main():
     parser = argparse.ArgumentParser(
         description=(
@@ -883,10 +948,24 @@ def main():
     )
 
     parser.add_argument(
-        "input",
-        type=Path,
-        nargs="?",
-        help="Text file with Artist - Title",
+        "inputs",
+        nargs="*",
+        metavar="INPUT",
+        help=(
+            "Text file with Artist - Title, "
+            "or an inline 'Artist - Title' track"
+        ),
+    )
+
+    parser.add_argument(
+        "--track",
+        action="append",
+        nargs="+",
+        metavar="ARTIST - TITLE",
+        help=(
+            "Track to download inline, "
+            "can be given several times"
+        ),
     )
 
     parser.add_argument(
@@ -974,15 +1053,19 @@ def main():
     if args.delay is None:
         args.delay = DEFAULT_DELAY
 
-    if args.input is None:
-        print(
-            "ERROR: No input file. "
-            "Pass it as an argument or set 'input' in the config file."
-        )
+    try:
+        sources = collect_sources(args, settings)
+
+    except ValueError as error:
+        print(f"ERROR: {error}")
         sys.exit(1)
 
-    if not args.input.exists():
-        print(f"ERROR: Input file not found: {args.input}")
+    if not sources:
+        print(
+            "ERROR: No input. "
+            "Pass a file or an inline 'Artist - Title' track, "
+            "or set 'input' in the config file."
+        )
         sys.exit(1)
 
     args.output.mkdir(
@@ -995,20 +1078,15 @@ def main():
 
     songs = []
 
-    for line in args.input.read_text(
-        encoding="utf-8",
-        errors="replace",
-    ).splitlines():
+    for source in sources:
+        if isinstance(source, Path):
+            songs.extend(read_song_file(source))
 
-        line = line.strip()
+        else:
+            song = parse_song(source)
 
-        if not line or line.startswith("#"):
-            continue
-
-        song = parse_song(line)
-
-        if song:
-            songs.append(song)
+            if song:
+                songs.append(song)
 
     done = read_done(done_file)
 
