@@ -6,6 +6,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [2.2.6] - 2026-11-10
+
 ### Added
 - `--help` now shows the default values and where the config file is looked up.
 
@@ -13,6 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - Lines in an input file that are not `Artist - Title` are no longer skipped silently: trackfetch prints how many lines it skipped and which ones they were.
 - Inline tracks that cannot be parsed, such as `"Artist - "` or `" - Title"`, now report an error instead of being silently skipped.
 - A missing input file now hints at the `Artist - Title` format, so a wrong separator is not mistaken for a missing file.
+- The README no longer claims that every option can be set in the config file, and it lists all the config file locations.
 
 ## [2.2.5] - 2026-11-10
 
