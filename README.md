@@ -248,6 +248,9 @@ trackfetch looks for the config file in this order: the path given with
 directory, `$XDG_CONFIG_HOME/trackfetch/trackfetch.ini`,
 `~/.config/trackfetch/trackfetch.ini` and `~/.trackfetch.ini`.
 
+A relative path in the config file, such as `output = songs`, is relative to
+the directory you run trackfetch from. A `[DEFAULT]` section works as well.
+
 ### Spotify credentials
 
 trackfetch needs a Spotify client ID and secret to read the metadata. Give
@@ -331,7 +334,7 @@ A [tldr](https://tldr.sh/) page is in [`docs/tldr/trackfetch.md`](https://github
    | `audio` in the video title | +0.03 |
    | `cover`, `karaoke`, `караоке`, `nightcore`, `sped up`, `slowed`, `remix`, `reaction` | −0.20 each |
 
-3. **Download.** yt-dlp downloads only the winning video and converts it to MP3.
+3. **Download.** yt-dlp downloads only the winning video and converts it to the chosen format. `m4a` and `opus` keep YouTube's original audio, `mp3` re-encodes it.
 4. **Tag.** trackfetch replaces any existing tags with these ID3v2.3 frames:
 
    | Frame | Content |

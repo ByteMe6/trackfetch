@@ -150,6 +150,51 @@ class TestInlineTracks:
         assert exc.value.code == 1
         assert "Artist - Title" in capsys.readouterr().out
 
+    def test_inline_track_uses_the_output_rules(self, pipeline, monkeypatch, tmp_path):
+        out = tmp_path / "o"
+        config = tmp_path / "cfg.ini"
+        config.write_text(f"[trackfetch]\noutput = {out}\n", encoding="utf-8")
+
+        run_cli(monkeypatch, "Daft Punk - One More Time", "--config", config)
+
+        assert (out / "Daft Punk - One More Time.m4a").exists()
+
+
+class TestDuplicates:
+    def test_duplicate_tracks_are_removed(self, pipeline, monkeypatch, tmp_path, capsys):
+        songs = tmp_path / "songs.txt"
+        songs.write_text(
+            "Daft Punk - One More Time\nDaft Punk - One More Time\n",
+            encoding="utf-8",
+        )
+        out = tmp_path / "o"
+
+        run_cli(monkeypatch, songs, "--track", "Daft Punk - One More Time", "-o", out)
+        log = capsys.readouterr().out
+
+        assert "Found 1 songs" in log
+        assert "Removed 2 duplicate(s)" in log
+        assert len(pipeline["searched"]) == 1
+        assert (out / "done.txt").read_text(encoding="utf-8").count("\n") == 1
+
+    def test_finished_song_is_not_counted_as_success(
+        self, pipeline, monkeypatch, tmp_path, capsys
+    ):
+        songs = tmp_path / "songs.txt"
+        songs.write_text("Daft Punk - One More Time\n", encoding="utf-8")
+        out = tmp_path / "o"
+
+        run_cli(monkeypatch, songs, "-o", out)
+
+        run_cli(monkeypatch, songs, "-o", out)
+        log = capsys.readouterr().out
+
+        assert "SKIP: already completed" in log
+        assert "SUCCESS: 0" in log
+        assert "SKIPPED: 1" in log
+
+
+class TestEdgeCases:
     def test_output_path_that_is_a_file_exits(self, pipeline, monkeypatch, tmp_path, capsys):
         target = tmp_path / "afile"
         target.write_bytes(b"")
@@ -170,6 +215,29 @@ class TestInlineTracks:
         assert exc.value.code == 0
         assert "No songs to download" in capsys.readouterr().out
 
+    def test_negative_delay_exits(self, pipeline, monkeypatch, tmp_path, capsys):
+        songs = tmp_path / "songs.txt"
+        songs.write_text("Daft Punk - One More Time\n", encoding="utf-8")
+
+        with pytest.raises(SystemExit) as exc:
+            run_cli(monkeypatch, songs, "-o", tmp_path / "o", "--delay", "-1")
+
+        assert exc.value.code == 1
+        assert "must not be negative" in capsys.readouterr().out
+
+    def test_bom_is_stripped(self, pipeline, monkeypatch, tmp_path):
+        songs = tmp_path / "songs.txt"
+        songs.write_text(
+            "Daft Punk - One More Time\n",
+            encoding="utf-8-sig",
+        )
+        out = tmp_path / "o"
+
+        run_cli(monkeypatch, songs, "-o", out)
+
+        assert (out / "Daft Punk - One More Time.m4a").exists()
+        assert not (out / "\ufeffDaft Punk - One More Time.m4a").exists()
+
     def test_unparsable_lines_in_a_file_are_reported(
         self, pipeline, monkeypatch, tmp_path, capsys
     ):
@@ -185,14 +253,18 @@ class TestInlineTracks:
         assert "WARNING: skipped 1 line(s)" in log
         assert "Daft Punk -One More Time" in log
 
-    def test_inline_track_uses_the_output_rules(self, pipeline, monkeypatch, tmp_path):
+    def test_long_emoji_title_is_truncated_by_bytes(self, pipeline, monkeypatch, tmp_path):
+        title = "🎵" * 300
+        songs = tmp_path / "songs.txt"
+        songs.write_text(f"Artist - {title}\n", encoding="utf-8")
         out = tmp_path / "o"
-        config = tmp_path / "cfg.ini"
-        config.write_text(f"[trackfetch]\noutput = {out}\n", encoding="utf-8")
 
-        run_cli(monkeypatch, "Daft Punk - One More Time", "--config", config)
+        run_cli(monkeypatch, songs, "-o", out)
 
-        assert (out / "Daft Punk - One More Time.m4a").exists()
+        files = list(out.glob("*.m4a"))
+
+        assert len(files) == 1
+        assert len(files[0].name.encode("utf-8")) < 255
 
 
 class TestCollectSources:

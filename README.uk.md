@@ -249,6 +249,9 @@ spotify_client_secret = твій-client-secret
 `$XDG_CONFIG_HOME/trackfetch/trackfetch.ini`,
 `~/.config/trackfetch/trackfetch.ini` і `~/.trackfetch.ini`.
 
+Відносний шлях у конфіг-файлі, наприклад `output = songs`, рахується від
+поточної директорії. Секція `[DEFAULT]` теж працює.
+
 ### Дані Spotify
 
 trackfetch потрібні client ID і client secret Spotify, щоб читати метадані.
@@ -330,7 +333,7 @@ trackfetch retry.txt
    | `audio` у назві ролика | +0.03 |
    | `cover`, `karaoke`, `караоке`, `nightcore`, `sped up`, `slowed`, `remix`, `reaction` | −0.20 за кожне |
 
-3. **Завантаження.** yt-dlp завантажує лише ролик-переможець і конвертує його в MP3.
+3. **Завантаження.** yt-dlp завантажує лише ролик-переможець і конвертує його в обраний формат. `m4a` і `opus` зберігають оригінальний звук YouTube, `mp3` перекодовує.
 4. **Теги.** trackfetch замінює всі наявні теги такими фреймами ID3v2.3:
 
    | Фрейм | Вміст |

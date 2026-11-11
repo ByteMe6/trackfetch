@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Fixed
+- A negative `--delay` now gives a clear error instead of a Python traceback.
+- A UTF-8 BOM in the input file no longer ends up in the artist, the title and the file name.
+- Duplicate tracks are removed before downloading, so they are not counted twice and `done.txt` stays clean.
+- A song that was already downloaded is no longer counted as a success.
+- File names are truncated by bytes, so a long title with multi-byte characters no longer fails with "File name too long".
 - Pointing `-o` at an existing file now gives a clear error instead of a Python traceback.
 - The run summary is flushed before the downloads start, so it no longer appears after the first song's progress output.
 - An input file with no usable songs now says `No songs to download` instead of ending silently with an empty summary.

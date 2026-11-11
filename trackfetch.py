@@ -41,6 +41,7 @@ CONFIG_ENV = "TRACKFETCH_CONFIG"
 
 DEFAULT_FORMAT = "m4a"
 DEFAULT_DELAY = 1.0
+MAX_FILENAME_BYTES = 200
 
 AUDIO_FORMATS = {
     "mp3": [],
@@ -74,7 +75,13 @@ def sanitize_filename(name: str) -> str:
     name = re.sub(r'[<>:"/\\|?*\x00-\x1f]', "_", name)
     name = re.sub(r"\s+", " ", name).strip()
 
-    return name[:200]
+    encoded = name.encode("utf-8")
+
+    if len(encoded) > MAX_FILENAME_BYTES:
+        encoded = encoded[:MAX_FILENAME_BYTES]
+        name = encoded.decode("utf-8", errors="ignore")
+
+    return name
 
 
 def parse_song(line: str):
@@ -772,6 +779,11 @@ def load_config(explicit=None):
         return {}, None
 
     if not config_path.is_file():
+        if config_path.exists():
+            raise FileNotFoundError(
+                f"Config path is not a file: {config_path}"
+            )
+
         raise FileNotFoundError(f"Config file not found: {config_path}")
 
     parser = configparser.ConfigParser()
@@ -884,7 +896,7 @@ def read_song_file(path: Path):
     skipped = []
 
     for line in path.read_text(
-        encoding="utf-8",
+        encoding="utf-8-sig",
         errors="replace",
     ).splitlines():
 
@@ -957,6 +969,12 @@ def collect_sources(args, settings):
 
 
 def main():
+    try:
+        sys.stdout.reconfigure(line_buffering=True)
+
+    except (AttributeError, ValueError):
+        pass
+
     parser = argparse.ArgumentParser(
         description=(
             "Download music using Spotify metadata "
@@ -1082,6 +1100,10 @@ def main():
     if args.delay is None:
         args.delay = DEFAULT_DELAY
 
+    if args.delay < 0:
+        print(f"ERROR: Delay must not be negative: {args.delay}")
+        sys.exit(1)
+
     try:
         sources = collect_sources(args, settings)
 
@@ -1124,6 +1146,22 @@ def main():
         print("No songs to download.")
         sys.exit(0)
 
+    unique_songs = []
+    seen_songs = set()
+
+    for artist, title in songs:
+        key = f"{artist} - {title}"
+
+        if key in seen_songs:
+            continue
+
+        seen_songs.add(key)
+        unique_songs.append((artist, title))
+
+    duplicates = len(songs) - len(unique_songs)
+
+    songs = unique_songs
+
     args.output.mkdir(
         parents=True,
         exist_ok=True,
@@ -1135,6 +1173,10 @@ def main():
     done = read_done(done_file)
 
     print(f"Found {len(songs)} songs")
+
+    if duplicates:
+        print(f"Removed {duplicates} duplicate(s)")
+
     print(f"Already completed: {len(done)} (from done.txt)")
 
     if skipped_lines:
@@ -1193,10 +1235,13 @@ def main():
                 song_key,
             )
 
-            success += 1
+            done.add(song_key)
 
             if reason == "exists":
                 skipped += 1
+
+            else:
+                success += 1
 
         else:
             append_line(
