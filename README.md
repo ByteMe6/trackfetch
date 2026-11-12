@@ -44,7 +44,7 @@ trackfetch reads a plain text file with one `Artist - Title` per line. For every
 
 ## Install
 
-Pick one. Homebrew and Nix also install yt-dlp, FFmpeg and Deno for you, as prebuilt binaries; with the other methods, install them yourself ([see below](#dependencies)). Every method needs a free Spotify API key ([set it up below](#spotify-credentials)).
+Pick one. Homebrew and Nix also install yt-dlp, FFmpeg and Deno for you; with the other methods, install them yourself ([see below](#dependencies)). Every method needs a free Spotify API key ([set it up below](#spotify-credentials)).
 
 ### Homebrew
 
@@ -54,7 +54,7 @@ macOS and Linux:
 brew install ByteMe6/tap/trackfetch
 ```
 
-On macOS the formula installs prebuilt binaries and compiles nothing: `trackfetch`, `yt-dlp`, `ffmpeg` and `deno` are downloaded ready to run, on both Apple Silicon and Intel, and the three tools are kept inside the formula instead of being linked into your `PATH`.
+On macOS the formula installs the prebuilt `trackfetch` binary and a static prebuilt `ffmpeg` inside the formula, so `ffmpeg`, the dependency Homebrew used to build for hours on Intel Macs and newer macOS versions, is never compiled. `yt-dlp` and `deno` come from Homebrew as usual.
 
 ### Nix
 

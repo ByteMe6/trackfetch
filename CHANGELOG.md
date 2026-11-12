@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Changed
-- `brew install trackfetch` no longer compiles anything on macOS: the formula installs prebuilt `yt-dlp`, `ffmpeg` and `deno` next to the prebuilt binary, so the first install takes seconds even where Homebrew has no bottles.
+- `brew install trackfetch` no longer compiles `ffmpeg` on macOS: the formula installs a static prebuilt `ffmpeg` next to the prebuilt binary, so the first install takes seconds even where Homebrew has no bottle for it.
 
 ### Fixed
 - A negative `--delay` now gives a clear error instead of a Python traceback.
