@@ -232,6 +232,25 @@ class TestEdgeCases:
         assert exc.value.code == 1
         assert "must not be negative" in capsys.readouterr().out
 
+    @pytest.mark.parametrize("value", ["nan", "inf", "-inf"])
+    def test_non_finite_delay_exits(
+        self, pipeline, monkeypatch, tmp_path, capsys, value
+    ):
+        songs = tmp_path / "songs.txt"
+        songs.write_text("Daft Punk - One More Time\n", encoding="utf-8")
+
+        with pytest.raises(SystemExit) as exc:
+            run_cli(
+                monkeypatch,
+                songs,
+                "-o",
+                tmp_path / "o",
+                f"--delay={value}",
+            )
+
+        assert exc.value.code == 1
+        assert "must be a finite number" in capsys.readouterr().out
+
     def test_bom_is_stripped(self, pipeline, monkeypatch, tmp_path):
         songs = tmp_path / "songs.txt"
         songs.write_text(

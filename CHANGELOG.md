@@ -30,7 +30,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - Provider `min_interval` values that are NaN, infinite or negative are rejected consistently from the CLI, the config file and `--provider-opt`.
 - Downloaded artwork is identified by its actual signature, so PNG, GIF and WebP files get the correct extension and MIME type instead of always being labelled JPEG. M4A skips GIF/WebP artwork rather than mislabelling it.
 - An incomplete metadata result can no longer overwrite a usable entry in `metadata-cache.json`.
-- A negative `--delay` now gives a clear error instead of a Python traceback.
+- A negative, NaN or infinite `--delay` now gives a clear error instead of a Python traceback.
 - A UTF-8 BOM in the input file no longer ends up in the artist, the title and the file name.
 - Duplicate tracks are removed before downloading, so they are not counted twice and `done.txt` stays clean.
 - A song that was already downloaded is no longer counted as a success.

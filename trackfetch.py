@@ -2795,6 +2795,10 @@ def main():
     if args.delay is None:
         args.delay = DEFAULT_DELAY
 
+    if not math.isfinite(args.delay):
+        print(f"ERROR: Delay must be a finite number: {args.delay}")
+        sys.exit(1)
+
     if args.delay < 0:
         print(f"ERROR: Delay must not be negative: {args.delay}")
         sys.exit(1)
