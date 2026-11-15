@@ -206,7 +206,11 @@ class TestMain:
         def video_for(artist, title):
             return None if artist == "Bad" else pipeline["video"]
 
+        def spotify_for(sp, artist, title):
+            return None if artist == "Bad" else pipeline["track"]
+
         monkeypatch.setattr(m, "find_youtube_video", video_for)
+        monkeypatch.setattr(m, "find_spotify_track", spotify_for)
 
         run_cli(monkeypatch, songs, "-o", out, "--delay", "0")
 
@@ -242,7 +246,11 @@ class TestMain:
         def video_for(artist, title):
             return None if artist == "Bad" else pipeline["video"]
 
+        def spotify_for(sp, artist, title):
+            return None if artist == "Bad" else pipeline["track"]
+
         monkeypatch.setattr(m, "find_youtube_video", video_for)
+        monkeypatch.setattr(m, "find_spotify_track", spotify_for)
 
         run_cli(monkeypatch, songs, "-o", out, "--no-logs", "--delay", "0")
         log = capsys.readouterr().out

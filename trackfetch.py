@@ -2743,7 +2743,10 @@ def main():
         "--no-logs",
         action="store_true",
         default=None,
-        help="Disable writing done.txt and failed.txt (default: off)",
+        help=(
+            "Do not read done.txt and do not write done.txt or failed.txt; "
+            "progress from earlier runs is ignored (default: off)"
+        ),
     )
 
     args = parser.parse_args()

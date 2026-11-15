@@ -182,7 +182,7 @@ trackfetch "My Playlist.txt" -o ~/Music/"My Playlist"
 ## Usage
 
 ```text
-trackfetch [-h] [--track ARTIST - TITLE ...] [-o OUTPUT] [--config CONFIG] [-f {mp3,m4a,opus}] [--title-only] [--delay DELAY] [-s SOURCES] [--disable-sources SOURCES] [--provider-opt NAME.KEY=VALUE] [--match-threshold SCORE] [--title-threshold SCORE] [--list-sources] [--spotify-client-id ID] [--spotify-client-secret SECRET] [INPUT ...]
+trackfetch [-h] [--track ARTIST - TITLE ...] [-o OUTPUT] [--config CONFIG] [-f {mp3,m4a,opus}] [--title-only] [--delay DELAY] [-s SOURCES] [--disable-sources SOURCES] [--provider-opt NAME.KEY=VALUE] [--match-threshold SCORE] [--title-threshold SCORE] [--list-sources] [--spotify-client-id ID] [--spotify-client-secret SECRET] [--no-logs] [INPUT ...]
 ```
 
 | Option | Default | What it does |
@@ -202,7 +202,7 @@ trackfetch [-h] [--track ARTIST - TITLE ...] [-o OUTPUT] [--config CONFIG] [-f {
 | `--list-sources` | — | Show available metadata providers and artwork fallbacks, then exit. Makes no network requests. |
 | `--spotify-client-id` | `$SPOTIFY_CLIENT_ID` | Spotify API client ID. See [Spotify credentials](#spotify-credentials). |
 | `--spotify-client-secret` | `$SPOTIFY_CLIENT_SECRET` | Spotify API client secret. |
-| `--no-logs` | off | Disable reading and writing `done.txt` and `failed.txt`. History from earlier runs is ignored, so finished songs are not skipped and failures are not retried from those files. |
+| `--no-logs` | off | Do not read `done.txt` and do not write `done.txt` or `failed.txt`. Progress from earlier runs is ignored, so finished songs are not skipped. |
 
 ```bash
 trackfetch songs.txt -o ~/Music/RoadTrip          # save to a specific folder
@@ -418,9 +418,11 @@ trackfetch retry.txt
 
 **Re-download a song** by deleting its MP3 and its line in `done.txt`.
 
-With `--no-logs`, trackfetch neither reads nor writes `done.txt` and `failed.txt`.
-This means progress is not restored between runs: finished songs from an earlier
-run are downloaded again, and failures are not taken into account.
+With `--no-logs`, trackfetch does not read `done.txt` and does not write
+`done.txt` or `failed.txt`. Progress is therefore not restored between runs:
+songs finished in an earlier run are downloaded again, and the failure log is
+neither created nor updated. `failed.txt` is a write-only log in every mode, so
+the flag only makes trackfetch stop producing it.
 
 ### Cheat sheet
 
