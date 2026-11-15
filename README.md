@@ -202,6 +202,7 @@ trackfetch [-h] [--track ARTIST - TITLE ...] [-o OUTPUT] [--config CONFIG] [-f {
 | `--list-sources` | — | Show available metadata providers and artwork fallbacks, then exit. Makes no network requests. |
 | `--spotify-client-id` | `$SPOTIFY_CLIENT_ID` | Spotify API client ID. See [Spotify credentials](#spotify-credentials). |
 | `--spotify-client-secret` | `$SPOTIFY_CLIENT_SECRET` | Spotify API client secret. |
+| `--no-logs` | off | Disable writing `done.txt` and `failed.txt`. |
 
 ```bash
 trackfetch songs.txt -o ~/Music/RoadTrip          # save to a specific folder
@@ -303,6 +304,7 @@ disable_sources = spotify
 spotify_enabled = false
 spotify_client_id = your-client-id
 spotify_client_secret = your-client-secret
+no_logs = false
 
 itunes_enabled = true
 itunes_country = us

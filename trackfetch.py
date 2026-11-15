@@ -2739,6 +2739,13 @@ def main():
         help="Spotify client secret (overrides the config file and the env)",
     )
 
+    parser.add_argument(
+        "--no-logs",
+        action="store_true",
+        default=None,
+        help="Disable writing done.txt and failed.txt (default: off)",
+    )
+
     args = parser.parse_args()
 
     try:
@@ -2781,6 +2788,9 @@ def main():
 
     if args.delay is None:
         args.delay = DEFAULT_DELAY
+
+    if args.no_logs is None:
+        args.no_logs = False
 
     if not math.isfinite(args.delay):
         print(f"ERROR: Delay must be a finite number: {args.delay}")
@@ -2853,17 +2863,23 @@ def main():
         exist_ok=True,
     )
 
-    done_file = args.output / "done.txt"
-    failed_file = args.output / "failed.txt"
+    if not args.no_logs:
+        done_file = args.output / "done.txt"
+        failed_file = args.output / "failed.txt"
 
-    done = read_done(done_file)
+        done = read_done(done_file)
+    else:
+        done_file = None
+        failed_file = None
+        done = set()
 
     print(f"Found {len(songs)} songs")
 
     if duplicates:
         print(f"Removed {duplicates} duplicate(s)")
 
-    print(f"Already completed: {len(done)} (from done.txt)")
+    if not args.no_logs:
+        print(f"Already completed: {len(done)} (from done.txt)")
 
     if skipped_lines:
         print(
@@ -2936,10 +2952,11 @@ def main():
         )
 
         if ok:
-            append_line(
-                done_file,
-                song_key,
-            )
+            if not args.no_logs:
+                append_line(
+                    done_file,
+                    song_key,
+                )
 
             done.add(song_key)
 
@@ -2950,10 +2967,11 @@ def main():
                 success += 1
 
         else:
-            append_line(
-                failed_file,
-                f"{song_key} | {reason}",
-            )
+            if not args.no_logs:
+                append_line(
+                    failed_file,
+                    f"{song_key} | {reason}",
+                )
 
             failed += 1
 
@@ -2966,8 +2984,10 @@ def main():
     print(f"SUCCESS: {success}")
     print(f"SKIPPED: {skipped}")
     print(f"FAILED: {failed}")
-    print(f"DONE FILE: {done_file}")
-    print(f"FAILED FILE: {failed_file}")
+
+    if not args.no_logs:
+        print(f"DONE FILE: {done_file}")
+        print(f"FAILED FILE: {failed_file}")
 
 
 if __name__ == "__main__":
