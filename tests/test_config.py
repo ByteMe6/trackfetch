@@ -337,6 +337,38 @@ class TestMainWithConfig:
 
         assert sleeps == [2.5]
 
+    def test_no_logs_true_from_config(self, pipeline, monkeypatch, tmp_path, capsys):
+        songs = tmp_path / "songs.txt"
+        songs.write_text("Daft Punk - One More Time\n", encoding="utf-8")
+        out = tmp_path / "o"
+        out.mkdir()
+        done = out / "done.txt"
+        done.write_text("Daft Punk - One More Time\n", encoding="utf-8")
+        config = write_config(
+            tmp_path / "cfg.ini", f"[trackfetch]\noutput = {out}\nno_logs = true\n"
+        )
+
+        run_cli(monkeypatch, songs, "--config", config)
+        log = capsys.readouterr().out
+
+        assert (out / "Daft Punk - One More Time.m4a").exists()
+        assert done.read_text(encoding="utf-8") == "Daft Punk - One More Time\n"
+        assert "DONE FILE" not in log
+
+    def test_no_logs_false_from_config(self, pipeline, monkeypatch, tmp_path, capsys):
+        songs = tmp_path / "songs.txt"
+        songs.write_text("Daft Punk - One More Time\n", encoding="utf-8")
+        out = tmp_path / "o"
+        config = write_config(
+            tmp_path / "cfg.ini", f"[trackfetch]\noutput = {out}\nno_logs = false\n"
+        )
+
+        run_cli(monkeypatch, songs, "--config", config)
+        log = capsys.readouterr().out
+
+        assert m.read_done(out / "done.txt") == {"Daft Punk - One More Time"}
+        assert "DONE FILE" in log
+
     def test_config_path_is_reported(self, pipeline, monkeypatch, tmp_path, capsys):
         songs = tmp_path / "songs.txt"
         songs.write_text("Daft Punk - One More Time\n", encoding="utf-8")

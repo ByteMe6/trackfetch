@@ -202,7 +202,7 @@ trackfetch [-h] [--track ARTIST - TITLE ...] [-o OUTPUT] [--config CONFIG] [-f {
 | `--list-sources` | — | Show available metadata providers and artwork fallbacks, then exit. Makes no network requests. |
 | `--spotify-client-id` | `$SPOTIFY_CLIENT_ID` | Spotify API client ID. See [Spotify credentials](#spotify-credentials). |
 | `--spotify-client-secret` | `$SPOTIFY_CLIENT_SECRET` | Spotify API client secret. |
-| `--no-logs` | off | Disable writing `done.txt` and `failed.txt`. |
+| `--no-logs` | off | Disable reading and writing `done.txt` and `failed.txt`. History from earlier runs is ignored, so finished songs are not skipped and failures are not retried from those files. |
 
 ```bash
 trackfetch songs.txt -o ~/Music/RoadTrip          # save to a specific folder
@@ -417,6 +417,10 @@ trackfetch retry.txt
 ```
 
 **Re-download a song** by deleting its MP3 and its line in `done.txt`.
+
+With `--no-logs`, trackfetch neither reads nor writes `done.txt` and `failed.txt`.
+This means progress is not restored between runs: finished songs from an earlier
+run are downloaded again, and failures are not taken into account.
 
 ### Cheat sheet
 
