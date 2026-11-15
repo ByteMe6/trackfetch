@@ -6,7 +6,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+- Configurable free metadata providers: iTunes (the new default), Deezer, MusicBrainz with Cover Art Archive, VocaDB and optional Spotify. No API key is needed except for Spotify.
+- `-s`/`--metadata-sources` with priority ordering, `none`, duplicate removal and unknown-name validation. YouTube stays a separate artwork fallback and is not part of the metadata ordering.
+- `--disable-sources`, `--provider-opt NAME.KEY=VALUE`, `--match-threshold`, `--title-threshold` and `--list-sources`.
+- Automatic temporary VocaDB promotion for CJK and Vocaloid-related input.
+- Independent per-provider rate limits: iTunes 3.0 s, Deezer 0.25 s, MusicBrainz 1.1 s and VocaDB 0.5 s.
+- Provider health tracking: two consecutive real failures start a 30-second cooldown that doubles up to 600 seconds, then the provider is retried and restored to its configured priority. Empty results and missing artwork do not count as failures.
+- Per-provider metadata cache in `metadata-cache.json` in the output directory, with graceful handling of corrupted files.
+- Artwork fallback from provider artwork to Cover Art Archive to the YouTube thumbnail, without replacing valid high-quality artwork.
+- New configuration keys for source priority, per-provider enabling, intervals, storefront country, YouTube fallback and matching thresholds.
+- Tests for source resolution, configuration, matching, provider responses, rate limiting, failure recovery, caching, artwork and the new CLI options.
+
 ### Changed
+- The default metadata source is now iTunes, so Spotify credentials are optional and Spotify is disabled unless explicitly selected or enabled.
+- `get_spotify()` now returns `None` quietly when credentials are missing instead of exiting.
+- Metadata results use one normalized structure with source, identifier, artwork and match score.
 - `brew install trackfetch` no longer compiles `ffmpeg` on macOS: the formula installs a static prebuilt `ffmpeg` next to the prebuilt binary, so the first install takes seconds even where Homebrew has no bottle for it.
 
 ### Fixed

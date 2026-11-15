@@ -1,7 +1,7 @@
 # trackfetch
 
-> Download songs listed in a text file as tagged MP3, M4A or Opus files, using Spotify metadata and YouTube audio.
-> Requires `yt-dlp`, `ffmpeg` and the Spotify client ID and secret (config file or `SPOTIFY_CLIENT_ID` and `SPOTIFY_CLIENT_SECRET`).
+> Download songs listed in a text file as tagged MP3, M4A or Opus files, using configurable free metadata sources and YouTube audio.
+> Requires `yt-dlp` and `ffmpeg`. Spotify is optional and only used when selected.
 > More information: <https://github.com/ByteMe6/trackfetch#usage>.
 
 - Download every song from a file with one `Artist - Title` per line into the current directory:
@@ -23,6 +23,22 @@
 - Name the files by song title only, instead of `Artist - Title`:
 
 `trackfetch {{path/to/songs.txt}} --title-only`
+
+- Use a custom metadata priority:
+
+`trackfetch {{path/to/songs.txt}} {{[-s|--metadata-sources]}} {{deezer,itunes,musicbrainz,vocadb}}`
+
+- Disable YouTube artwork fallback or any other source:
+
+`trackfetch {{path/to/songs.txt}} --disable-sources {{youtube}}`
+
+- List the available metadata providers and artwork fallbacks:
+
+`trackfetch --list-sources`
+
+- Set a provider-specific option:
+
+`trackfetch {{path/to/songs.txt}} --provider-opt {{itunes.country=ua}}`
 
 - Use a config file for the defaults:
 
