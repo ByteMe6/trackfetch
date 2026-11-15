@@ -27,6 +27,13 @@ def pipeline(monkeypatch):
             shutil.copy(FIXTURES / f"silence.{audio_format}", path)
         return path
 
+    def fake_resolve_metadata(artist, title, source_config, runtime):
+        track = fake_find_spotify(None, artist, title)
+        metadata = m.get_track_metadata(track, artist, title)
+        metadata.update(source="spotify", source_id=track.get("id"), score=1.0)
+        return metadata
+
+    monkeypatch.setattr(m, "resolve_metadata", fake_resolve_metadata)
     monkeypatch.setattr(m, "find_spotify_track", fake_find_spotify)
     monkeypatch.setattr(m, "find_youtube_video", lambda a, t: state["video"])
     monkeypatch.setattr(m, "download_audio", fake_download_audio)

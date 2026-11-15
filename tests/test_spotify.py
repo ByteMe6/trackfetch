@@ -5,19 +5,18 @@ import trackfetch as m
 
 
 class TestGetSpotify:
-    def test_exits_without_credentials(self, monkeypatch, capsys):
+    def test_returns_none_without_credentials(self, monkeypatch, capsys):
         monkeypatch.delenv("SPOTIFY_CLIENT_ID", raising=False)
         monkeypatch.delenv("SPOTIFY_CLIENT_SECRET", raising=False)
-        with pytest.raises(SystemExit) as exc:
-            m.get_spotify()
-        assert exc.value.code == 1
-        assert "credentials not found" in capsys.readouterr().out
 
-    def test_exits_with_only_one_credential(self, monkeypatch):
+        assert m.get_spotify() is None
+        assert capsys.readouterr().out == ""
+
+    def test_returns_none_with_only_one_credential(self, monkeypatch):
         monkeypatch.setenv("SPOTIFY_CLIENT_ID", "id")
         monkeypatch.delenv("SPOTIFY_CLIENT_SECRET", raising=False)
-        with pytest.raises(SystemExit):
-            m.get_spotify()
+
+        assert m.get_spotify() is None
 
     def test_builds_client(self, monkeypatch):
         monkeypatch.setenv("SPOTIFY_CLIENT_ID", "id")

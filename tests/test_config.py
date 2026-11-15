@@ -30,6 +30,13 @@ def pipeline(monkeypatch):
     def fake_download_cover(url, dest):
         dest.write_bytes(b"\xff\xd8\xff\xe0jpeg")
 
+    def fake_resolve_metadata(artist, title, source_config, runtime):
+        track = state["track"]
+        metadata = m.get_track_metadata(track, artist, title)
+        metadata.update(source="spotify", source_id=track.get("id"), score=1.0)
+        return metadata
+
+    monkeypatch.setattr(m, "resolve_metadata", fake_resolve_metadata)
     monkeypatch.setattr(m, "find_spotify_track", lambda sp, a, t: state["track"])
     monkeypatch.setattr(m, "find_youtube_video", lambda a, t: state["video"])
     monkeypatch.setattr(m, "download_audio", fake_download_audio)
@@ -186,15 +193,12 @@ class TestSpotifyCredentials:
 
         assert (client_id, client_secret) == ("flag-id", "flag-secret")
 
-    def test_missing_credentials_exit(self, monkeypatch, capsys):
+    def test_missing_credentials_return_none_quietly(self, monkeypatch, capsys):
         monkeypatch.delenv("SPOTIFY_CLIENT_ID", raising=False)
         monkeypatch.delenv("SPOTIFY_CLIENT_SECRET", raising=False)
 
-        with pytest.raises(SystemExit) as exc:
-            m.get_spotify()
-
-        assert exc.value.code == 1
-        assert "Spotify credentials not found" in capsys.readouterr().out
+        assert m.get_spotify() is None
+        assert capsys.readouterr().out == ""
 
 
 class TestMainWithConfig:

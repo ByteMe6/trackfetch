@@ -55,9 +55,91 @@ AUDIO_FORMATS = {
     ],
 }
 
+VERSION = "2.2.6"
+USER_AGENT = (
+    f"trackfetch/{VERSION} "
+    "(https://github.com/ByteMe6/trackfetch)"
+)
+
+METADATA_PROVIDERS = (
+    "spotify",
+    "itunes",
+    "deezer",
+    "musicbrainz",
+    "vocadb",
+)
+ARTWORK_FALLBACKS = ("youtube",)
+DEFAULT_METADATA_SOURCES = ("itunes",)
+
+PROVIDER_DEFAULTS = {
+    "spotify": {
+        "enabled": False,
+        "min_interval": 0.0,
+    },
+    "itunes": {
+        "enabled": True,
+        "min_interval": 3.0,
+        "country": "us",
+    },
+    "deezer": {
+        "enabled": False,
+        "min_interval": 0.25,
+    },
+    "musicbrainz": {
+        "enabled": False,
+        "min_interval": 1.1,
+    },
+    "vocadb": {
+        "enabled": False,
+        "min_interval": 0.5,
+    },
+}
+
+DEFAULT_MATCH_THRESHOLD = 0.6
+DEFAULT_TITLE_THRESHOLD = 0.8
+YOUTUBE_DEFAULT_ENABLED = True
+
+CACHE_FILENAME = "metadata-cache.json"
+CACHE_VERSION = 1
+
+PROVIDER_OPTIONS = {
+    "spotify": {"enabled", "min_interval"},
+    "itunes": {"enabled", "min_interval", "country"},
+    "deezer": {"enabled", "min_interval"},
+    "musicbrainz": {"enabled", "min_interval"},
+    "vocadb": {"enabled", "min_interval"},
+}
+
+CJK_RE = re.compile(
+    r"[\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff"
+    r"\uf900-\ufaff\uac00-\ud7af]"
+)
+VOCALOID_HINTS = (
+    "vocaloid",
+    "hatsune miku",
+    "初音ミク",
+    "镜音",
+    "鏡音",
+    "巡音",
+    "gumi",
+    "ia ",
+    "kaito",
+    "meiko",
+    "v flower",
+)
+
+
+class ProviderError(Exception):
+    """A provider request failed for a real, retryable reason."""
+
+
+class ProviderAuthError(ProviderError):
+    """A provider rejected the credentials."""
+
 
 def normalize(text: str) -> str:
-    text = unicodedata.normalize("NFKD", text).lower()
+    # NFC keeps meaningful Unicode characters (CJK, accented letters) intact.
+    text = unicodedata.normalize("NFC", text).lower()
     text = re.sub(r"[^\w\s]", " ", text)
     text = re.sub(r"\s+", " ", text)
     return text.strip()
@@ -69,6 +151,687 @@ def similarity(a: str, b: str) -> float:
         normalize(a),
         normalize(b)
     ).ratio()
+
+
+def artist_similarity(input_artist: str, candidate_artist: str) -> float:
+    """Compare an artist while allowing providers to list several artists."""
+    if not candidate_artist:
+        return 0.0
+
+    best = similarity(input_artist, candidate_artist)
+
+    for part in re.split(r"[,;&/]| feat\.? | featuring ", candidate_artist):
+        part = part.strip()
+
+        if part:
+            best = max(best, similarity(input_artist, part))
+
+    return best
+
+
+def score_metadata(
+    input_artist: str,
+    input_title: str,
+    candidate: dict,
+    match_threshold: float,
+    title_threshold: float,
+):
+    """Return a copy of the candidate with a score, or None if it is too weak."""
+    candidate_title = candidate.get("title") or ""
+
+    if not candidate_title:
+        return None
+
+    title_score = similarity(input_title, candidate_title)
+
+    if title_score < title_threshold:
+        return None
+
+    artist_score = artist_similarity(
+        input_artist,
+        candidate.get("artist") or "",
+    )
+    overall = title_score * 0.70 + artist_score * 0.30
+
+    if overall < match_threshold:
+        return None
+
+    scored = dict(candidate)
+    scored["score"] = overall
+    scored["title_score"] = title_score
+    scored["artist_score"] = artist_score
+
+    return scored
+
+
+def select_best_metadata(
+    candidates,
+    input_artist: str,
+    input_title: str,
+    match_threshold: float,
+    title_threshold: float,
+):
+    """Pick the highest scoring candidate that passes both thresholds."""
+    best = None
+
+    for candidate in candidates or []:
+        if not isinstance(candidate, dict):
+            continue
+
+        scored = score_metadata(
+            input_artist,
+            input_title,
+            candidate,
+            match_threshold,
+            title_threshold,
+        )
+
+        if scored is None:
+            continue
+
+        if best is None or scored["score"] > best["score"]:
+            best = scored
+
+    return best
+
+
+def fallback_metadata(artist: str, title: str) -> dict:
+    return {
+        "artist": artist,
+        "title": title,
+        "album": "",
+        "album_artist": artist,
+        "track_number": None,
+        "release_date": None,
+        "cover_url": None,
+        "source": "input",
+        "source_id": None,
+        "score": 0.0,
+    }
+
+
+class SourceConfig:
+    """The resolved, immutable-in-practice source configuration for one run."""
+
+    def __init__(
+        self,
+        metadata_sources,
+        youtube_enabled,
+        providers,
+        match_threshold,
+        title_threshold,
+        none_selected=False,
+    ):
+        self.metadata_sources = list(metadata_sources)
+        self.youtube_enabled = bool(youtube_enabled)
+        self.providers = providers
+        self.match_threshold = match_threshold
+        self.title_threshold = title_threshold
+        self.none_selected = bool(none_selected)
+
+    def interval(self, name: str) -> float:
+        return self.providers[name]["min_interval"]
+
+    def is_enabled(self, name: str) -> bool:
+        return bool(self.providers[name].get("enabled"))
+
+
+def split_source_names(value: str):
+    return [
+        item.strip().lower()
+        for item in (value or "").split(",")
+        if item.strip()
+    ]
+
+
+def normalize_metadata_sources(value: str):
+    """Validate and de-duplicate a metadata provider list, preserving order."""
+    names = []
+
+    for name in split_source_names(value):
+        if name in ARTWORK_FALLBACKS:
+            raise ValueError(
+                f"'{name}' is an artwork fallback, not a metadata provider"
+            )
+
+        if name not in METADATA_PROVIDERS:
+            raise ValueError(
+                f"Unknown metadata source '{name}' "
+                f"(choose from {', '.join(METADATA_PROVIDERS)} or none)"
+            )
+
+        if name not in names:
+            names.append(name)
+
+    return names
+
+
+def normalize_disable_sources(value: str):
+    names = []
+
+    for name in split_source_names(value):
+        if name not in METADATA_PROVIDERS and name not in ARTWORK_FALLBACKS:
+            raise ValueError(
+                f"Unknown source '{name}' "
+                f"(choose from {', '.join(METADATA_PROVIDERS + ARTWORK_FALLBACKS)})"
+            )
+
+        if name not in names:
+            names.append(name)
+
+    return names
+
+
+def parse_bool(value: str, label: str) -> bool:
+    lowered = (value or "").strip().lower()
+
+    if lowered in ("1", "true", "yes", "on"):
+        return True
+
+    if lowered in ("0", "false", "no", "off"):
+        return False
+
+    raise ValueError(
+        f"Invalid boolean for '{label}': {value!r} "
+        "(use true or false)"
+    )
+
+
+def parse_interval(value: str, label: str) -> float:
+    try:
+        interval = float(value)
+
+    except (TypeError, ValueError) as error:
+        raise ValueError(
+            f"Invalid number for '{label}': {value!r}"
+        ) from error
+
+    if interval < 0:
+        raise ValueError(f"'{label}' must not be negative: {value!r}")
+
+    return interval
+
+
+def parse_provider_options(values):
+    """Parse --provider-opt NAME.KEY=VALUE arguments into typed settings."""
+    options = []
+
+    for raw in values or []:
+        text = str(raw).strip()
+
+        if "=" not in text:
+            raise ValueError(
+                f"Invalid --provider-opt '{raw}': expected NAME.KEY=VALUE"
+            )
+
+        target, value = text.split("=", 1)
+
+        if "." not in target:
+            raise ValueError(
+                f"Invalid --provider-opt '{raw}': expected NAME.KEY=VALUE"
+            )
+
+        name, key = target.split(".", 1)
+        name = name.strip().lower()
+        key = key.strip().lower()
+        value = value.strip()
+
+        if name not in METADATA_PROVIDERS:
+            raise ValueError(
+                f"Unknown provider in --provider-opt: '{name}' "
+                f"(choose from {', '.join(METADATA_PROVIDERS)})"
+            )
+
+        if key not in PROVIDER_OPTIONS[name]:
+            allowed = ", ".join(sorted(PROVIDER_OPTIONS[name]))
+            raise ValueError(
+                f"Unknown option '{key}' for provider '{name}' "
+                f"(choose from {allowed})"
+            )
+
+        if value == "":
+            raise ValueError(
+                f"Empty value in --provider-opt '{raw}'"
+            )
+
+        if key == "enabled":
+            parsed = parse_bool(value, f"{name}.{key}")
+
+        elif key == "min_interval":
+            parsed = parse_interval(value, f"{name}.{key}")
+
+        else:
+            parsed = value.lower()
+
+        options.append((name, key, parsed))
+
+    return options
+
+
+def threshold_value(value, default: float, label: str) -> float:
+    if value is None:
+        return default
+
+    try:
+        number = float(value)
+
+    except (TypeError, ValueError) as error:
+        raise ValueError(f"Invalid value for '{label}': {value!r}") from error
+
+    return min(1.0, max(0.0, number))
+
+
+def build_source_config(args, settings):
+    """Resolve CLI flags, config settings and built-in defaults.
+
+    Precedence is CLI > config.ini > built-in defaults. The result does not
+    permanently change any user configuration.
+    """
+    settings = settings or {}
+
+    providers = {}
+    config_enabled = set()
+    config_disabled = set()
+
+    for name in METADATA_PROVIDERS:
+        defaults = PROVIDER_DEFAULTS[name]
+        entry = dict(defaults)
+        entry["disabled"] = False
+
+        enabled_key = f"{name}_enabled"
+        interval_key = f"{name}_min_interval"
+
+        if enabled_key in settings and str(settings[enabled_key]).strip():
+            enabled = parse_bool(settings[enabled_key], enabled_key)
+            entry["enabled"] = enabled
+
+            if enabled:
+                config_enabled.add(name)
+            else:
+                config_disabled.add(name)
+
+        if interval_key in settings and str(settings[interval_key]).strip():
+            entry["min_interval"] = parse_interval(
+                settings[interval_key],
+                interval_key,
+            )
+
+        if name == "itunes" and settings.get("itunes_country", "").strip():
+            country = settings["itunes_country"].strip().lower()
+
+            if not re.fullmatch(r"[a-z]{2}", country):
+                raise ValueError(
+                    f"Invalid value for 'itunes_country': "
+                    f"{settings['itunes_country']!r} (use a two-letter code)"
+                )
+
+            entry["country"] = country
+
+        providers[name] = entry
+
+    cli_enabled = set()
+    cli_disabled = set()
+
+    for name, key, value in parse_provider_options(
+        getattr(args, "provider_opt", None)
+    ):
+        if key == "enabled":
+            providers[name]["enabled"] = value
+
+            if value:
+                cli_enabled.add(name)
+                cli_disabled.discard(name)
+            else:
+                cli_disabled.add(name)
+                cli_enabled.discard(name)
+
+        elif key == "min_interval":
+            providers[name]["min_interval"] = value
+
+        elif key == "country":
+            if not re.fullmatch(r"[a-z]{2}", value):
+                raise ValueError(
+                    f"Invalid value for '{name}.country': {value!r} "
+                    "(use a two-letter code)"
+                )
+
+            providers[name]["country"] = value
+
+    cli_raw = getattr(args, "metadata_sources", None)
+    cli_sources_given = cli_raw is not None
+    raw_sources = (
+        cli_raw
+        if cli_sources_given
+        else config_str_value(settings, "metadata_sources")
+    )
+
+    none_selected = False
+
+    if raw_sources is None:
+        sources = list(DEFAULT_METADATA_SOURCES)
+
+    elif (raw_sources or "").strip().lower() == "none":
+        sources = []
+        none_selected = True
+
+    else:
+        sources = normalize_metadata_sources(raw_sources)
+
+    disabled_sources = set()
+
+    for raw in (
+        config_str_value(settings, "disable_sources"),
+        getattr(args, "disable_sources", None),
+    ):
+        if raw:
+            disabled_sources.update(normalize_disable_sources(raw))
+
+    remove = set(disabled_sources) | set(cli_disabled)
+
+    if not cli_sources_given:
+        remove.update(config_disabled)
+
+    sources = [name for name in sources if name not in remove]
+
+    if not none_selected:
+        append_enabled = set(cli_enabled)
+
+        if not cli_sources_given:
+            append_enabled.update(config_enabled)
+
+        for name in METADATA_PROVIDERS:
+            if name in append_enabled and name not in sources and name not in remove:
+                sources.append(name)
+
+    for name in METADATA_PROVIDERS:
+        providers[name]["enabled"] = name in sources
+        providers[name]["disabled"] = name in remove
+
+    youtube_enabled = YOUTUBE_DEFAULT_ENABLED
+
+    if "youtube_enabled" in settings and str(settings["youtube_enabled"]).strip():
+        youtube_enabled = parse_bool(
+            settings["youtube_enabled"],
+            "youtube_enabled",
+        )
+
+    if "youtube" in disabled_sources:
+        youtube_enabled = False
+
+    match_threshold = threshold_value(
+        getattr(args, "match_threshold", None),
+        threshold_value(
+            settings.get("match_threshold"),
+            DEFAULT_MATCH_THRESHOLD,
+            "match_threshold",
+        ),
+        "match_threshold",
+    )
+    title_threshold = threshold_value(
+        getattr(args, "title_threshold", None),
+        threshold_value(
+            settings.get("title_threshold"),
+            DEFAULT_TITLE_THRESHOLD,
+            "title_threshold",
+        ),
+        "title_threshold",
+    )
+
+    return SourceConfig(
+        sources,
+        youtube_enabled,
+        providers,
+        match_threshold,
+        title_threshold,
+        none_selected,
+    )
+
+
+def has_vocadb_hint(artist: str, title: str) -> bool:
+    text = f"{artist} {title}"
+    lowered = text.lower()
+
+    if CJK_RE.search(text):
+        return True
+
+    return any(hint in lowered for hint in VOCALOID_HINTS)
+
+
+def effective_metadata_sources(config: SourceConfig, artist: str, title: str):
+    """Apply the temporary VocaDB promotion without changing the config."""
+    sources = [
+        name
+        for name in config.metadata_sources
+        if config.is_enabled(name)
+    ]
+    vocadb = config.providers["vocadb"]
+
+    if config.none_selected:
+        # An explicit empty list such as `-s none` stays empty.
+        return []
+
+    if not has_vocadb_hint(artist, title) or vocadb.get("disabled"):
+        return sources
+
+    if "vocadb" in sources:
+        sources.remove("vocadb")
+
+    return ["vocadb", *sources]
+
+
+def format_source_list(config: SourceConfig) -> str:
+    lines = ["Available sources:", "", "Metadata providers:"]
+
+    for name in METADATA_PROVIDERS:
+        entry = config.providers[name]
+        status = "enabled" if entry.get("enabled") else "disabled"
+        credentials = "required" if name == "spotify" else "not required"
+        details = [f"min_interval={entry['min_interval']}s"]
+
+        if name == "itunes":
+            details.insert(0, f"country={entry.get('country', 'us')}")
+
+        lines.append(
+            f"  {name:<12} {status:<9} credentials: {credentials:<13} "
+            f"{', '.join(details)}"
+        )
+
+    lines.extend(["", "Artwork fallbacks:"])
+
+    for name in ARTWORK_FALLBACKS:
+        status = "enabled" if config.youtube_enabled else "disabled"
+        lines.append(
+            f"  {name:<12} {status:<9} credentials: not required  "
+            f"used when metadata has no artwork"
+        )
+
+    lines.extend(
+        [
+            "",
+            f"Metadata priority: {', '.join(config.metadata_sources) or 'none'}",
+            f"Match threshold: {config.match_threshold}",
+            f"Title threshold: {config.title_threshold}",
+        ]
+    )
+
+    return "\n".join(lines)
+
+
+class ProviderHealth:
+    """Per-provider consecutive-failure and cooldown tracking."""
+
+    INITIAL_COOLDOWN = 30.0
+    MAX_COOLDOWN = 600.0
+
+    def __init__(self, clock=None):
+        self.clock = clock or (lambda: time.monotonic())
+        self.states = {}
+
+    def state(self, name: str) -> dict:
+        return self.states.setdefault(
+            name,
+            {
+                "failures": 0,
+                "cooldown_until": 0.0,
+                "cooldown_seconds": 0.0,
+            },
+        )
+
+    def failures(self, name: str) -> int:
+        return self.state(name)["failures"]
+
+    def in_cooldown(self, name: str) -> bool:
+        return self.state(name)["cooldown_until"] > self.clock()
+
+    def record_success(self, name: str):
+        state = self.state(name)
+        state["failures"] = 0
+        state["cooldown_until"] = 0.0
+        state["cooldown_seconds"] = 0.0
+
+    def record_failure(self, name: str):
+        state = self.state(name)
+        state["failures"] += 1
+
+        if state["failures"] < 2:
+            return
+
+        previous = state["cooldown_seconds"]
+
+        if previous <= 0:
+            cooldown = self.INITIAL_COOLDOWN
+        else:
+            cooldown = min(previous * 2, self.MAX_COOLDOWN)
+
+        state["cooldown_seconds"] = cooldown
+        state["cooldown_until"] = self.clock() + cooldown
+
+    def force_cooldown(self, name: str, seconds: float):
+        state = self.state(name)
+        state["cooldown_seconds"] = seconds
+        state["cooldown_until"] = self.clock() + seconds
+
+
+class RateLimiter:
+    """Independent minimum request interval per provider."""
+
+    def __init__(self, intervals=None, clock=None):
+        self.intervals = dict(intervals or {})
+        self.clock = clock or (lambda: time.monotonic())
+        self.last_request = {}
+
+    def wait(self, name: str):
+        interval = self.intervals.get(name, 0.0)
+
+        if interval <= 0:
+            self.last_request[name] = self.clock()
+            return
+
+        last = self.last_request.get(name)
+
+        if last is not None:
+            remaining = interval - (self.clock() - last)
+
+            if remaining > 0:
+                time.sleep(remaining)
+
+        self.last_request[name] = self.clock()
+
+
+class MetadataCache:
+    """Per-provider metadata cache stored next to the downloaded files."""
+
+    def __init__(self, path: Path):
+        self.path = Path(path)
+        self.entries = {}
+        self.load()
+
+    @staticmethod
+    def key(artist: str, title: str) -> str:
+        return f"{normalize(artist)}|{normalize(title)}"
+
+    def load(self):
+        if not self.path.is_file():
+            return
+
+        try:
+            data = json.loads(self.path.read_text(encoding="utf-8"))
+
+        except (OSError, ValueError, TypeError):
+            self.entries = {}
+            return
+
+        if not isinstance(data, dict):
+            self.entries = {}
+            return
+
+        entries = data.get("entries")
+
+        if not isinstance(entries, dict):
+            self.entries = {}
+            return
+
+        self.entries = entries
+
+    def save(self):
+        payload = {
+            "version": CACHE_VERSION,
+            "entries": self.entries,
+        }
+
+        try:
+            self.path.parent.mkdir(parents=True, exist_ok=True)
+            self.path.write_text(
+                json.dumps(
+                    payload,
+                    ensure_ascii=False,
+                    indent=2,
+                    sort_keys=True,
+                ) + "\n",
+                encoding="utf-8",
+            )
+
+        except OSError:
+            pass
+
+    def get(self, artist: str, title: str, provider: str):
+        entry = self.entries.get(self.key(artist, title))
+
+        if not isinstance(entry, dict):
+            return None
+
+        result = entry.get(provider)
+
+        if not isinstance(result, dict) or not result.get("title"):
+            return None
+
+        return dict(result)
+
+    def set(self, artist: str, title: str, provider: str, result: dict):
+        key = self.key(artist, title)
+        entry = self.entries.get(key)
+
+        if not isinstance(entry, dict):
+            entry = {}
+
+        stored = {
+            field: result.get(field)
+            for field in (
+                "title",
+                "artist",
+                "album",
+                "album_artist",
+                "track_number",
+                "release_date",
+                "cover_url",
+                "source",
+                "source_id",
+                "score",
+            )
+        }
+        entry[provider] = stored
+        self.entries[key] = entry
+        self.save()
 
 
 def sanitize_filename(name: str) -> str:
@@ -115,18 +878,11 @@ def spotify_credentials(args=None):
 
 
 def get_spotify(args=None):
+    """Build a Spotify client, or return None quietly without credentials."""
     client_id, client_secret = spotify_credentials(args)
 
     if not client_id or not client_secret:
-        print("\nERROR: Spotify credentials not found.")
-        print("Set them in the config file:")
-        print("[trackfetch]")
-        print("spotify_client_id = '...'")
-        print("spotify_client_secret = '...'")
-        print("or in the environment:")
-        print("export SPOTIFY_CLIENT_ID='...'")
-        print("export SPOTIFY_CLIENT_SECRET='...'")
-        sys.exit(1)
+        return None
 
     return spotipy.Spotify(
         auth_manager=SpotifyClientCredentials(
@@ -138,7 +894,12 @@ def get_spotify(args=None):
     )
 
 
-def find_spotify_track(sp, artist: str, title: str):
+def find_spotify_track(
+    sp,
+    artist: str,
+    title: str,
+    raise_errors: bool = False,
+):
     query = f'artist:"{artist}" track:"{title}"'
 
     try:
@@ -148,6 +909,9 @@ def find_spotify_track(sp, artist: str, title: str):
             limit=10,
         )
     except Exception as error:
+        if raise_errors:
+            raise
+
         print(f"WARNING: Spotify search error: {error}")
         return None
 
@@ -162,6 +926,9 @@ def find_spotify_track(sp, artist: str, title: str):
             )
             tracks = results.get("tracks", {}).get("items", [])
         except Exception:
+            if raise_errors:
+                raise
+
             return None
 
     if not tracks:
@@ -228,18 +995,83 @@ def get_track_metadata(track, fallback_artist, fallback_title):
     }
 
 
+def is_image_bytes(data: bytes) -> bool:
+    """Check common image signatures before writing a cover file."""
+    if not data:
+        return False
+
+    signatures = (
+        b"\xff\xd8\xff",          # JPEG
+        b"\x89PNG\r\n\x1a\n",     # PNG
+        b"GIF87a",
+        b"GIF89a",
+        b"RIFF",                  # WebP (RIFF....WEBP below)
+    )
+
+    if data.startswith(signatures):
+        return True
+
+    return b"WEBP" in data[:16]
+
+
 def download_cover(url: str, destination: Path):
     response = requests.get(
         url,
         timeout=30,
         headers={
-            "User-Agent": "trackfetch/2.2.6"
+            "User-Agent": USER_AGENT
         },
     )
 
     response.raise_for_status()
 
+    if not is_image_bytes(response.content):
+        raise ValueError("response is not a valid image")
+
     destination.write_bytes(response.content)
+
+
+def youtube_thumbnail_urls(video):
+    """Return thumbnail URLs for a YouTube result, best first."""
+    urls = []
+    thumbnails = (video or {}).get("thumbnails")
+
+    if isinstance(thumbnails, list):
+        ordered = sorted(
+            (
+                item for item in thumbnails
+                if isinstance(item, dict) and item.get("url")
+            ),
+            key=lambda item: (
+                (item.get("width") or 0) * (item.get("height") or 0)
+            ),
+            reverse=True,
+        )
+
+        urls.extend(item["url"] for item in ordered)
+
+    thumbnail = (video or {}).get("thumbnail")
+
+    if isinstance(thumbnail, str) and thumbnail:
+        urls.append(thumbnail)
+
+    video_id = (video or {}).get("id")
+
+    if video_id:
+        urls.append(
+            f"https://i.ytimg.com/vi/{video_id}/maxresdefault.jpg"
+        )
+        urls.append(
+            f"https://i.ytimg.com/vi/{video_id}/hqdefault.jpg"
+        )
+
+    result = []
+
+    for url in urls:
+        if url not in result:
+            result.append(url)
+
+    return result
 
 
 def youtube_search(query: str, limit: int = 5):
@@ -350,6 +1182,609 @@ def find_youtube_video(artist: str, title: str):
         )
 
     return best_video
+
+
+class MetadataRuntime:
+    """Shared state for one TrackFetch run: HTTP, health, rate limits, cache."""
+
+    def __init__(
+        self,
+        session=None,
+        cache=None,
+        health=None,
+        limiter=None,
+        spotify_args=None,
+    ):
+        self.session = session or requests.Session()
+        headers = getattr(self.session, "headers", None)
+
+        if headers is not None:
+            headers.setdefault("User-Agent", USER_AGENT)
+
+        self.cache = cache
+        self.health = health or ProviderHealth()
+        self.limiter = limiter or RateLimiter()
+        self.spotify_args = spotify_args
+        self.spotify_client = None
+        self.spotify_initialized = False
+        self.cover_art_cache = {}
+
+
+def request_json(
+    runtime,
+    provider: str,
+    url: str,
+    params=None,
+    headers=None,
+    timeout=20,
+):
+    """Rate-limited JSON request with predictable provider errors."""
+    request_headers = {"User-Agent": USER_AGENT}
+
+    if headers:
+        request_headers.update(headers)
+
+    runtime.limiter.wait(provider)
+
+    try:
+        response = runtime.session.get(
+            url,
+            params=params,
+            headers=request_headers,
+            timeout=timeout,
+        )
+
+    except requests.Timeout as error:
+        raise ProviderError(f"{provider} request timed out") from error
+
+    except requests.RequestException as error:
+        raise ProviderError(f"{provider} request failed: {error}") from error
+
+    status = getattr(response, "status_code", 200)
+
+    if status in (401, 403):
+        raise ProviderAuthError(f"{provider} returned HTTP {status}")
+
+    if status >= 400:
+        raise ProviderError(f"{provider} returned HTTP {status}")
+
+    try:
+        return response.json()
+
+    except (ValueError, TypeError) as error:
+        raise ProviderError(
+            f"{provider} returned invalid JSON"
+        ) from error
+
+
+def is_spotify_auth_error(error) -> bool:
+    status = getattr(error, "http_status", None)
+
+    if status in (401, 403):
+        return True
+
+    text = str(error)
+
+    return "401" in text or "403" in text
+
+
+def spotify_provider(runtime, artist: str, title: str, config: SourceConfig):
+    if not runtime.spotify_initialized:
+        try:
+            runtime.spotify_client = get_spotify(runtime.spotify_args)
+
+        except Exception as error:
+            runtime.spotify_initialized = True
+
+            if is_spotify_auth_error(error):
+                raise ProviderAuthError(str(error)) from error
+
+            raise ProviderError(f"Spotify authentication error: {error}") from error
+
+        runtime.spotify_initialized = True
+
+    if runtime.spotify_client is None:
+        # Missing credentials are an optional-provider state, not a failure.
+        return []
+
+    try:
+        track = find_spotify_track(
+            runtime.spotify_client,
+            artist,
+            title,
+            raise_errors=True,
+        )
+
+    except Exception as error:
+        if is_spotify_auth_error(error):
+            raise ProviderAuthError(str(error)) from error
+
+        raise ProviderError(f"Spotify search error: {error}") from error
+
+    if track is None:
+        return []
+
+    metadata = get_track_metadata(track, artist, title)
+
+    return [
+        {
+            "title": metadata["title"],
+            "artist": metadata["artist"],
+            "album": metadata["album"],
+            "album_artist": metadata["album_artist"],
+            "track_number": metadata["track_number"],
+            "release_date": metadata["release_date"],
+            "cover_url": metadata["cover_url"],
+            "source": "spotify",
+            "source_id": track.get("id"),
+        }
+    ]
+
+
+def upscale_itunes_artwork(url):
+    if not url:
+        return None
+
+    return re.sub(r"\d+x\d+bb\.", "600x600bb.", url)
+
+
+def itunes_provider(runtime, artist: str, title: str, config: SourceConfig):
+    country = config.providers["itunes"].get("country", "us")
+    data = request_json(
+        runtime,
+        "itunes",
+        "https://itunes.apple.com/search",
+        params={
+            "term": f"{artist} {title}",
+            "media": "music",
+            "entity": "song",
+            "limit": 25,
+            "country": country,
+        },
+    )
+
+    if not isinstance(data, dict) or not isinstance(data.get("results"), list):
+        raise ProviderError("iTunes returned an invalid response")
+
+    candidates = []
+
+    for item in data["results"]:
+        if not isinstance(item, dict) or not item.get("trackName"):
+            continue
+
+        candidates.append(
+            {
+                "title": item.get("trackName"),
+                "artist": item.get("artistName") or "",
+                "album": item.get("collectionName") or "",
+                "album_artist": item.get("artistName") or "",
+                "track_number": item.get("trackNumber"),
+                "release_date": item.get("releaseDate"),
+                "cover_url": upscale_itunes_artwork(
+                    item.get("artworkUrl100")
+                    or item.get("artworkUrl60")
+                    or item.get("artworkUrl30")
+                ),
+                "source": "itunes",
+                "source_id": item.get("trackId"),
+            }
+        )
+
+    return candidates
+
+
+def deezer_provider(runtime, artist: str, title: str, config: SourceConfig):
+    data = request_json(
+        runtime,
+        "deezer",
+        "https://api.deezer.com/search",
+        params={
+            "q": f'artist:"{artist}" track:"{title}"',
+            "limit": 25,
+        },
+    )
+
+    if not isinstance(data, dict):
+        raise ProviderError("Deezer returned an invalid response")
+
+    if data.get("error"):
+        raise ProviderError(
+            f"Deezer API error: {data['error']}"
+        )
+
+    items = data.get("data")
+
+    if not isinstance(items, list):
+        raise ProviderError("Deezer returned an invalid response")
+
+    candidates = []
+
+    for item in items:
+        if not isinstance(item, dict) or not item.get("title"):
+            continue
+
+        album = item.get("album") or {}
+        album_artist = (album.get("artist") or {}).get("name")
+        artist_name = (item.get("artist") or {}).get("name") or ""
+
+        candidates.append(
+            {
+                "title": item.get("title"),
+                "artist": artist_name,
+                "album": album.get("title") or "",
+                "album_artist": album_artist or artist_name,
+                "track_number": None,
+                "release_date": item.get("release_date"),
+                "cover_url": (
+                    album.get("cover_xl")
+                    or album.get("cover_big")
+                    or album.get("cover_medium")
+                    or album.get("cover")
+                ),
+                "source": "deezer",
+                "source_id": item.get("id"),
+            }
+        )
+
+    return candidates
+
+
+def musicbrainz_artist(recording) -> str:
+    parts = []
+
+    for credit in recording.get("artist-credit") or []:
+        if not isinstance(credit, dict):
+            continue
+
+        parts.append(credit.get("name") or "")
+        parts.append(credit.get("joinphrase") or "")
+
+    return "".join(parts).strip()
+
+
+def cover_art_archive_url(runtime, release_id, config: SourceConfig):
+    """Look up front cover art for a MusicBrainz release, with memoisation."""
+    if not release_id:
+        return None
+
+    if release_id in runtime.cover_art_cache:
+        return runtime.cover_art_cache[release_id]
+
+    try:
+        data = request_json(
+            runtime,
+            "musicbrainz",
+            f"https://coverartarchive.org/release/{release_id}",
+        )
+
+    except ProviderAuthError:
+        runtime.cover_art_cache[release_id] = None
+        return None
+
+    except ProviderError:
+        runtime.cover_art_cache[release_id] = None
+        return None
+
+    images = data.get("images") if isinstance(data, dict) else None
+
+    if not isinstance(images, list):
+        runtime.cover_art_cache[release_id] = None
+        return None
+
+    front = [
+        image
+        for image in images
+        if isinstance(image, dict) and image.get("front")
+    ]
+    chosen = None
+
+    for image in front or [item for item in images if isinstance(item, dict)]:
+        if not image.get("image"):
+            continue
+
+        if chosen is None:
+            chosen = image
+
+        elif (
+            (image.get("width") or 0) * (image.get("height") or 0)
+            > (chosen.get("width") or 0) * (chosen.get("height") or 0)
+        ):
+            chosen = image
+
+    url = chosen.get("image") if chosen else None
+    runtime.cover_art_cache[release_id] = url
+
+    return url
+
+
+def musicbrainz_provider(runtime, artist: str, title: str, config: SourceConfig):
+    data = request_json(
+        runtime,
+        "musicbrainz",
+        "https://musicbrainz.org/ws/2/recording",
+        params={
+            "query": f'artist:"{artist}" AND recording:"{title}"',
+            "fmt": "json",
+            "limit": 10,
+        },
+        headers={"User-Agent": USER_AGENT},
+    )
+
+    recordings = data.get("recordings") if isinstance(data, dict) else None
+
+    if not isinstance(recordings, list):
+        raise ProviderError("MusicBrainz returned an invalid response")
+
+    candidates = []
+
+    for recording in recordings:
+        if not isinstance(recording, dict) or not recording.get("title"):
+            continue
+
+        releases = recording.get("releases") or []
+        release = releases[0] if releases and isinstance(releases[0], dict) else {}
+        release_id = release.get("id")
+        release_date = release.get("date")
+
+        if not release_date:
+            for medium in release.get("media") or []:
+                if isinstance(medium, dict):
+                    for track in medium.get("tracks") or []:
+                        if isinstance(track, dict) and track.get("first-release-date"):
+                            release_date = track["first-release-date"]
+                            break
+
+        candidates.append(
+            {
+                "title": recording.get("title"),
+                "artist": musicbrainz_artist(recording),
+                "album": release.get("title") or "",
+                "album_artist": musicbrainz_artist(recording),
+                "track_number": None,
+                "release_date": release_date,
+                "cover_url": cover_art_archive_url(
+                    runtime,
+                    release_id,
+                    config,
+                ),
+                "source": "musicbrainz",
+                "source_id": recording.get("id"),
+            }
+        )
+
+    return candidates
+
+
+def absolute_vocadb_url(url):
+    if not url:
+        return None
+
+    if url.startswith("//"):
+        return "https:" + url
+
+    if url.startswith("/"):
+        return "https://vocadb.net" + url
+
+    return url
+
+
+def vocadb_picture_url(item, album=None):
+    for source in (item, album or {}):
+        if not isinstance(source, dict):
+            continue
+
+        picture = source.get("mainPicture")
+
+        if isinstance(picture, dict):
+            url = (
+                picture.get("url")
+                or picture.get("original")
+                or picture.get("largeThumbUrl")
+            )
+
+            if url:
+                return absolute_vocadb_url(url)
+
+        for key in ("coverPicture", "picture", "coverUrl"):
+            if source.get(key):
+                return absolute_vocadb_url(source[key])
+
+    return None
+
+
+def vocadb_provider(runtime, artist: str, title: str, config: SourceConfig):
+    data = request_json(
+        runtime,
+        "vocadb",
+        "https://vocadb.net/api/songs",
+        params={
+            "query": f"{artist} {title}",
+            "nameMatchMode": "Auto",
+            "maxResults": 20,
+            "contentType": "Song",
+        },
+    )
+
+    items = data.get("items") if isinstance(data, dict) else None
+
+    if not isinstance(items, list):
+        raise ProviderError("VocaDB returned an invalid response")
+
+    candidates = []
+
+    for item in items:
+        if not isinstance(item, dict) or not item.get("name"):
+            continue
+
+        artist_name = item.get("artistString") or ""
+
+        if not artist_name:
+            artist_name = ", ".join(
+                credit.get("name") or ""
+                for credit in item.get("artists") or []
+                if isinstance(credit, dict)
+            ).strip(", ")
+
+        albums = item.get("albums") or []
+        album = albums[0] if albums and isinstance(albums[0], dict) else {}
+
+        candidates.append(
+            {
+                "title": item.get("name"),
+                "artist": artist_name,
+                "album": album.get("name") or "",
+                "album_artist": artist_name,
+                "track_number": None,
+                "release_date": (
+                    item.get("publishDate")
+                    or item.get("releaseDate")
+                    or album.get("releaseDate")
+                ),
+                "cover_url": vocadb_picture_url(item, album),
+                "source": "vocadb",
+                "source_id": item.get("id"),
+            }
+        )
+
+    return candidates
+
+
+PROVIDER_FUNCTIONS = {
+    "spotify": spotify_provider,
+    "itunes": itunes_provider,
+    "deezer": deezer_provider,
+    "musicbrainz": musicbrainz_provider,
+    "vocadb": vocadb_provider,
+}
+
+
+def cached_metadata(runtime, artist, title, provider, config):
+    if runtime.cache is None:
+        return None
+
+    cached = runtime.cache.get(artist, title, provider)
+
+    if cached is None:
+        return None
+
+    return select_best_metadata(
+        [cached],
+        artist,
+        title,
+        config.match_threshold,
+        config.title_threshold,
+    )
+
+
+def resolve_metadata(artist: str, title: str, config: SourceConfig, runtime):
+    """Return the first suitable metadata result in configured priority order."""
+    if runtime is None:
+        runtime = MetadataRuntime()
+
+    fallback = fallback_metadata(artist, title)
+
+    for provider in effective_metadata_sources(config, artist, title):
+        if runtime.health.in_cooldown(provider):
+            cached = cached_metadata(
+                runtime,
+                artist,
+                title,
+                provider,
+                config,
+            )
+
+            if cached is not None:
+                return cached
+
+            continue
+
+        state = runtime.health.state(provider)
+
+        if state["failures"] == 0:
+            cached = cached_metadata(
+                runtime,
+                artist,
+                title,
+                provider,
+                config,
+            )
+
+            if cached is not None:
+                return cached
+
+        try:
+            candidates = PROVIDER_FUNCTIONS[provider](
+                runtime,
+                artist,
+                title,
+                config,
+            )
+
+        except ProviderAuthError:
+            runtime.health.force_cooldown(provider, 600.0)
+            cached = cached_metadata(
+                runtime,
+                artist,
+                title,
+                provider,
+                config,
+            )
+
+            if cached is not None:
+                return cached
+
+            continue
+
+        except ProviderError:
+            runtime.health.record_failure(provider)
+            cached = cached_metadata(
+                runtime,
+                artist,
+                title,
+                provider,
+                config,
+            )
+
+            if cached is not None:
+                return cached
+
+            continue
+
+        except (KeyError, TypeError, ValueError, AttributeError, IndexError):
+            # A malformed but successful-looking API response is a failure,
+            # not a reason to abort the whole run.
+            runtime.health.record_failure(provider)
+            cached = cached_metadata(
+                runtime,
+                artist,
+                title,
+                provider,
+                config,
+            )
+
+            if cached is not None:
+                return cached
+
+            continue
+
+        best = select_best_metadata(
+            candidates,
+            artist,
+            title,
+            config.match_threshold,
+            config.title_threshold,
+        )
+
+        # A valid response, even with no match, resets the failure counter.
+        runtime.health.record_success(provider)
+
+        if best is not None:
+            if runtime.cache is not None:
+                runtime.cache.set(artist, title, provider, best)
+
+            return best
+
+    return fallback
 
 
 def download_audio(
@@ -610,6 +2045,38 @@ def append_line(path: Path, text: str):
         file.write(text + "\n")
 
 
+def download_best_cover(metadata, video, cover_path, youtube_enabled):
+    """Download provider artwork, then fall back to a YouTube thumbnail."""
+    candidates = []
+
+    if metadata.get("cover_url"):
+        candidates.append(
+            (metadata["cover_url"], metadata.get("source") or "metadata")
+        )
+
+    if youtube_enabled:
+        for url in youtube_thumbnail_urls(video):
+            candidates.append((url, "YouTube"))
+
+    last_error = None
+
+    for url, source in candidates:
+        try:
+            download_cover(url, cover_path)
+
+            if cover_path.exists() and cover_path.stat().st_size > 0:
+                print(f"{source} cover downloaded")
+                return True
+
+        except Exception as error:
+            last_error = error
+
+    if last_error is not None:
+        print(f"WARNING: cover download failed: {last_error}")
+
+    return False
+
+
 def process_song(
     sp,
     input_artist,
@@ -617,18 +2084,35 @@ def process_song(
     output,
     title_only,
     audio_format="mp3",
+    source_config=None,
+    runtime=None,
 ):
-    track = find_spotify_track(
-        sp,
-        input_artist,
-        input_title,
-    )
+    if source_config is None and runtime is None:
+        track = find_spotify_track(
+            sp,
+            input_artist,
+            input_title,
+        )
 
-    metadata = get_track_metadata(
-        track,
-        input_artist,
-        input_title,
-    )
+        metadata = get_track_metadata(
+            track,
+            input_artist,
+            input_title,
+        )
+        metadata.setdefault("source", "spotify")
+        youtube_enabled = True
+
+    else:
+        if source_config is None:
+            source_config = build_source_config(None, {})
+
+        metadata = resolve_metadata(
+            input_artist,
+            input_title,
+            source_config,
+            runtime,
+        )
+        youtube_enabled = source_config.youtube_enabled
 
     print(
         f"Metadata: "
@@ -647,6 +2131,10 @@ def process_song(
     if final_path.exists():
         print(f"SKIP: already exists: {filename}")
         return True, "exists"
+
+    if not youtube_enabled:
+        print("FAILED: YouTube is disabled")
+        return False, "YouTube disabled"
 
     video = find_youtube_video(
         metadata["artist"],
@@ -689,20 +2177,12 @@ def process_song(
 
         cover_path = temp_dir / "cover.jpg"
 
-        if metadata["cover_url"]:
-            try:
-                download_cover(
-                    metadata["cover_url"],
-                    cover_path,
-                )
-
-                print("Spotify cover downloaded")
-
-            except Exception as error:
-                print(
-                    f"WARNING: cover download failed: "
-                    f"{error}"
-                )
+        download_best_cover(
+            metadata,
+            video,
+            cover_path,
+            youtube_enabled,
+        )
 
         try:
             add_metadata(
@@ -858,7 +2338,19 @@ def apply_config(args, parser, settings):
     for action in parser._actions:
         dest = action.dest
 
-        if dest in ("help", "version", "config", "inputs", "track"):
+        if dest in (
+            "help",
+            "version",
+            "config",
+            "inputs",
+            "track",
+            "metadata_sources",
+            "disable_sources",
+            "provider_opt",
+            "match_threshold",
+            "title_threshold",
+            "list_sources",
+        ):
             continue
 
         if getattr(args, dest, None) is not None:
@@ -977,8 +2469,8 @@ def main():
 
     parser = argparse.ArgumentParser(
         description=(
-            "Download music using Spotify metadata "
-            "and YouTube audio"
+            "Download music using configurable free metadata "
+            "sources and YouTube audio"
         ),
         epilog=(
             "A config file with the defaults can be used as well. It is "
@@ -1057,6 +2549,62 @@ def main():
     )
 
     parser.add_argument(
+        "-s",
+        "--metadata-sources",
+        default=None,
+        metavar="SOURCES",
+        help=(
+            "Comma-separated metadata priority, for example "
+            "'deezer,itunes,musicbrainz' or 'none' "
+            "(default: itunes)"
+        ),
+    )
+
+    parser.add_argument(
+        "--disable-sources",
+        default=None,
+        metavar="SOURCES",
+        help=(
+            "Comma-separated sources to disable, "
+            "for example 'spotify,youtube'"
+        ),
+    )
+
+    parser.add_argument(
+        "--provider-opt",
+        action="append",
+        default=None,
+        metavar="NAME.KEY=VALUE",
+        help=(
+            "Provider-specific setting, for example "
+            "--provider-opt itunes.country=ua"
+        ),
+    )
+
+    parser.add_argument(
+        "--match-threshold",
+        type=float,
+        default=None,
+        metavar="SCORE",
+        help="Minimum overall match score, 0.0-1.0 (default: 0.6)",
+    )
+
+    parser.add_argument(
+        "--title-threshold",
+        type=float,
+        default=None,
+        metavar="SCORE",
+        help="Minimum title similarity, 0.0-1.0 (default: 0.8)",
+    )
+
+    parser.add_argument(
+        "--list-sources",
+        action="store_true",
+        default=None,
+        help="List available metadata sources and exit",
+    )
+
+    parser.add_argument(
         "--spotify-client-id",
         default=None,
         help="Spotify client ID (overrides the config file and the env)",
@@ -1087,6 +2635,17 @@ def main():
     except ValueError as error:
         print(f"ERROR: {error}")
         sys.exit(1)
+
+    try:
+        source_config = build_source_config(args, settings)
+
+    except ValueError as error:
+        print(f"ERROR: {error}")
+        sys.exit(1)
+
+    if args.list_sources:
+        print(format_source_list(source_config))
+        return
 
     if args.output is None:
         args.output = resolve_output(None, settings)
@@ -1196,9 +2755,27 @@ def main():
 
     print(f"Output: {args.output}")
 
+    print(
+        "Metadata sources: "
+        + (", ".join(source_config.metadata_sources) or "none")
+    )
+    print(
+        "YouTube artwork fallback: "
+        + ("enabled" if source_config.youtube_enabled else "disabled")
+    )
+
     sys.stdout.flush()
 
-    sp = get_spotify(args)
+    runtime = MetadataRuntime(
+        cache=MetadataCache(args.output / CACHE_FILENAME),
+        limiter=RateLimiter(
+            {
+                name: source_config.interval(name)
+                for name in METADATA_PROVIDERS
+            }
+        ),
+        spotify_args=args,
+    )
 
     success = 0
     skipped = 0
@@ -1221,12 +2798,14 @@ def main():
             continue
 
         ok, reason = process_song(
-            sp,
+            None,
             artist,
             title,
             args.output,
             args.title_only,
             args.format,
+            source_config=source_config,
+            runtime=runtime,
         )
 
         if ok:

@@ -44,6 +44,17 @@ def pipeline(monkeypatch):
             raise OSError("cover unavailable")
         dest.write_bytes(b"\xff\xd8\xff\xe0jpeg")
 
+    def fake_resolve_metadata(artist, title, source_config, runtime):
+        track = m.find_spotify_track(None, artist, title)
+
+        if track is None:
+            return m.fallback_metadata(artist, title)
+
+        metadata = m.get_track_metadata(track, artist, title)
+        metadata.update(source="spotify", source_id=track.get("id"), score=1.0)
+        return metadata
+
+    monkeypatch.setattr(m, "resolve_metadata", fake_resolve_metadata)
     monkeypatch.setattr(m, "find_spotify_track", fake_find_spotify)
     monkeypatch.setattr(m, "find_youtube_video", lambda artist, title: state["video"])
     monkeypatch.setattr(m, "download_audio", fake_download_audio)
