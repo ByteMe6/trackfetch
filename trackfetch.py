@@ -545,27 +545,27 @@ def build_source_config(args, settings):
     )
     all_disabled_sources = config_disabled_sources | cli_disabled_sources
 
-    config_disabled_metadata = config_disabled_sources - set(ARTWORK_FALLBACKS)
-    cli_disabled_metadata = cli_disabled_sources - set(ARTWORK_FALLBACKS)
+    config_disables = config_disabled | (
+        config_disabled_sources - set(ARTWORK_FALLBACKS)
+    )
+    cli_disables = cli_disabled | (
+        cli_disabled_sources - set(ARTWORK_FALLBACKS)
+    )
 
     if cli_sources_given:
         # A CLI selection is an explicit override of the configured source
-        # list and of any per-provider configuration that disables it. Only
-        # CLI disable operations may remove an explicitly selected provider.
-        remove = cli_disabled_metadata | set(cli_disabled)
-        disabled_for_promotion = (
-            cli_disabled_metadata
-            | set(cli_disabled)
-            | (config_disabled | config_disabled_metadata) - set(sources)
-            - set(cli_enabled)
+        # list and of any configured disabling of those providers. Only an
+        # explicit CLI disable may remove a selected provider.
+        remove = set(cli_disables)
+        # A config disable still blocks VocaDB promotion unless the provider
+        # was also explicitly selected or enabled on the CLI.
+        disabled_for_promotion = set(cli_disables) | (
+            config_disables - set(sources) - set(cli_enabled)
         )
     else:
         # An explicit CLI provider enable still wins over config disabling,
         # but never over an explicit CLI disable.
-        remove = (
-            config_disabled_metadata | set(config_disabled)
-        ) - set(cli_enabled)
-        remove |= cli_disabled_metadata | set(cli_disabled)
+        remove = (config_disables - set(cli_enabled)) | set(cli_disables)
         disabled_for_promotion = set(remove)
 
     sources = [name for name in sources if name not in remove]
@@ -1115,11 +1115,7 @@ def download_cover(url: str, destination: Path):
         raise ValueError("response is not a valid image")
 
     destination = Path(destination)
-    final_path = destination.with_suffix(IMAGE_FORMATS[format_name][1])
-    final_path.write_bytes(response.content)
-
-    if final_path != destination and destination.exists():
-        destination.unlink()
+    destination.write_bytes(response.content)
 
     return format_name
 
@@ -2173,31 +2169,22 @@ def download_best_cover(metadata, video, cover_path, youtube_enabled):
 
     for url, source in candidates:
         try:
-            result = download_cover(url, cover_path)
+            download_cover(url, cover_path)
 
-            if isinstance(result, Path):
-                actual_path = result
-            elif result in IMAGE_FORMATS:
-                actual_path = cover_path.with_suffix(
-                    IMAGE_FORMATS[result][1]
-                )
-            else:
-                actual_path = cover_path
-
-            if not actual_path.exists():
-                actual_path = cover_path
-
-            image_data = actual_path.read_bytes()
+            # Trust the bytes on disk over the URL or the Content-Type header,
+            # so the saved extension always matches the actual image format.
+            image_data = cover_path.read_bytes()
             format_name = detect_image_format(image_data)
 
             if format_name is None:
                 raise ValueError("response is not a valid image")
 
-            extension = IMAGE_FORMATS[format_name][1]
-            final_path = actual_path.with_suffix(extension)
+            final_path = cover_path.with_suffix(
+                IMAGE_FORMATS[format_name][1]
+            )
 
-            if actual_path != final_path:
-                actual_path.replace(final_path)
+            if cover_path != final_path:
+                cover_path.replace(final_path)
 
             if final_path.stat().st_size > 0:
                 print(f"{source} cover downloaded")

@@ -1363,8 +1363,7 @@ class TestArtwork:
         format_name = m.download_cover("https://img/cover.jpg", destination)
 
         assert format_name == "png"
-        assert (tmp_path / "cover.png").read_bytes() == Response.content
-        assert not destination.exists()
+        assert destination.read_bytes() == Response.content
 
     @pytest.mark.parametrize(
         "content",
