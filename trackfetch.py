@@ -5,6 +5,7 @@ import argparse
 import base64
 import configparser
 import json
+import math
 import os
 import re
 import shutil
@@ -346,6 +347,11 @@ def parse_interval(value: str, label: str) -> float:
             f"Invalid number for '{label}': {value!r}"
         ) from error
 
+    if not math.isfinite(interval):
+        raise ValueError(
+            f"'{label}' must be a finite number: {value!r}"
+        )
+
     if interval < 0:
         raise ValueError(f"'{label}' must not be negative: {value!r}")
 
@@ -418,7 +424,17 @@ def threshold_value(value, default: float, label: str) -> float:
     except (TypeError, ValueError) as error:
         raise ValueError(f"Invalid value for '{label}': {value!r}") from error
 
-    return min(1.0, max(0.0, number))
+    if not math.isfinite(number):
+        raise ValueError(
+            f"'{label}' must be a finite number between 0.0 and 1.0: {value!r}"
+        )
+
+    if not 0.0 <= number <= 1.0:
+        raise ValueError(
+            f"'{label}' must be between 0.0 and 1.0: {value!r}"
+        )
+
+    return number
 
 
 def build_source_config(args, settings):
@@ -517,19 +533,40 @@ def build_source_config(args, settings):
     else:
         sources = normalize_metadata_sources(raw_sources)
 
-    disabled_sources = set()
+    config_disabled_sources = set(
+        normalize_disable_sources(
+            config_str_value(settings, "disable_sources") or ""
+        )
+    )
+    cli_disabled_sources = set(
+        normalize_disable_sources(
+            getattr(args, "disable_sources", None) or ""
+        )
+    )
+    all_disabled_sources = config_disabled_sources | cli_disabled_sources
 
-    for raw in (
-        config_str_value(settings, "disable_sources"),
-        getattr(args, "disable_sources", None),
-    ):
-        if raw:
-            disabled_sources.update(normalize_disable_sources(raw))
+    config_disabled_metadata = config_disabled_sources - set(ARTWORK_FALLBACKS)
+    cli_disabled_metadata = cli_disabled_sources - set(ARTWORK_FALLBACKS)
 
-    remove = set(disabled_sources) | set(cli_disabled)
-
-    if not cli_sources_given:
-        remove.update(config_disabled)
+    if cli_sources_given:
+        # A CLI selection is an explicit override of the configured source
+        # list and of any per-provider configuration that disables it. Only
+        # CLI disable operations may remove an explicitly selected provider.
+        remove = cli_disabled_metadata | set(cli_disabled)
+        disabled_for_promotion = (
+            cli_disabled_metadata
+            | set(cli_disabled)
+            | (config_disabled | config_disabled_metadata) - set(sources)
+            - set(cli_enabled)
+        )
+    else:
+        # An explicit CLI provider enable still wins over config disabling,
+        # but never over an explicit CLI disable.
+        remove = (
+            config_disabled_metadata | set(config_disabled)
+        ) - set(cli_enabled)
+        remove |= cli_disabled_metadata | set(cli_disabled)
+        disabled_for_promotion = set(remove)
 
     sources = [name for name in sources if name not in remove]
 
@@ -545,7 +582,7 @@ def build_source_config(args, settings):
 
     for name in METADATA_PROVIDERS:
         providers[name]["enabled"] = name in sources
-        providers[name]["disabled"] = name in remove
+        providers[name]["disabled"] = name in disabled_for_promotion
 
     youtube_enabled = YOUTUBE_DEFAULT_ENABLED
 
@@ -555,7 +592,7 @@ def build_source_config(args, settings):
             "youtube_enabled",
         )
 
-    if "youtube" in disabled_sources:
+    if "youtube" in all_disabled_sources:
         youtube_enabled = False
 
     match_threshold = threshold_value(
@@ -808,11 +845,29 @@ class MetadataCache:
         return dict(result)
 
     def set(self, artist: str, title: str, provider: str, result: dict):
+        if not isinstance(result, dict) or not result.get("title"):
+            # An incomplete result must not replace a usable cached entry.
+            return False
+
         key = self.key(artist, title)
         entry = self.entries.get(key)
 
         if not isinstance(entry, dict):
             entry = {}
+
+        existing = entry.get(provider)
+
+        if isinstance(existing, dict) and existing.get("title"):
+            old_score = existing.get("score")
+            new_score = result.get("score")
+
+            try:
+                if old_score is not None and (
+                    new_score is None or float(new_score) < float(old_score)
+                ):
+                    return False
+            except (TypeError, ValueError):
+                pass
 
         stored = {
             field: result.get(field)
@@ -832,6 +887,8 @@ class MetadataCache:
         entry[provider] = stored
         self.entries[key] = entry
         self.save()
+
+        return True
 
 
 def sanitize_filename(name: str) -> str:
@@ -995,23 +1052,50 @@ def get_track_metadata(track, fallback_artist, fallback_title):
     }
 
 
+IMAGE_FORMATS = {
+    "jpeg": ("image/jpeg", ".jpg"),
+    "png": ("image/png", ".png"),
+    "gif": ("image/gif", ".gif"),
+    "webp": ("image/webp", ".webp"),
+}
+
+
+def detect_image_format(data: bytes):
+    """Return the image format from its signature, or None if unsupported."""
+    if not data:
+        return None
+
+    if data.startswith(b"\xff\xd8\xff"):
+        return "jpeg"
+
+    if data.startswith(b"\x89PNG\r\n\x1a\n"):
+        return "png"
+
+    if data.startswith((b"GIF87a", b"GIF89a")):
+        return "gif"
+
+    if (
+        len(data) >= 12
+        and data.startswith(b"RIFF")
+        and data[8:12] == b"WEBP"
+    ):
+        return "webp"
+
+    return None
+
+
+def image_mime_type(data: bytes):
+    format_name = detect_image_format(data)
+
+    if format_name is None:
+        return None
+
+    return IMAGE_FORMATS[format_name][0]
+
+
 def is_image_bytes(data: bytes) -> bool:
     """Check common image signatures before writing a cover file."""
-    if not data:
-        return False
-
-    signatures = (
-        b"\xff\xd8\xff",          # JPEG
-        b"\x89PNG\r\n\x1a\n",     # PNG
-        b"GIF87a",
-        b"GIF89a",
-        b"RIFF",                  # WebP (RIFF....WEBP below)
-    )
-
-    if data.startswith(signatures):
-        return True
-
-    return b"WEBP" in data[:16]
+    return detect_image_format(data) is not None
 
 
 def download_cover(url: str, destination: Path):
@@ -1025,10 +1109,19 @@ def download_cover(url: str, destination: Path):
 
     response.raise_for_status()
 
-    if not is_image_bytes(response.content):
+    format_name = detect_image_format(response.content)
+
+    if format_name is None:
         raise ValueError("response is not a valid image")
 
-    destination.write_bytes(response.content)
+    destination = Path(destination)
+    final_path = destination.with_suffix(IMAGE_FORMATS[format_name][1])
+    final_path.write_bytes(response.content)
+
+    if final_path != destination and destination.exists():
+        destination.unlink()
+
+    return format_name
 
 
 def youtube_thumbnail_urls(video):
@@ -1917,16 +2010,18 @@ def add_mp3_metadata(
 
     if cover_path.exists():
         image_data = cover_path.read_bytes()
+        mime = image_mime_type(image_data)
 
-        audio.add(
-            APIC(
-                encoding=3,
-                mime="image/jpeg",
-                type=3,
-                desc="Cover",
-                data=image_data,
+        if mime is not None:
+            audio.add(
+                APIC(
+                    encoding=3,
+                    mime=mime,
+                    type=3,
+                    desc="Cover",
+                    data=image_data,
+                )
             )
-        )
 
     audio.save(
         mp3_path,
@@ -1959,15 +2054,19 @@ def add_opus_metadata(
             audio[key] = str(value)
 
     if cover_path.exists():
-        picture = Picture()
-        picture.type = 3
-        picture.mime = "image/jpeg"
-        picture.desc = "Cover"
-        picture.data = cover_path.read_bytes()
+        image_data = cover_path.read_bytes()
+        mime = image_mime_type(image_data)
 
-        audio["METADATA_BLOCK_PICTURE"] = base64.b64encode(
-            picture.write()
-        ).decode("ascii")
+        if mime is not None:
+            picture = Picture()
+            picture.type = 3
+            picture.mime = mime
+            picture.desc = "Cover"
+            picture.data = image_data
+
+            audio["METADATA_BLOCK_PICTURE"] = base64.b64encode(
+                picture.write()
+            ).decode("ascii")
 
     audio.save()
 
@@ -2001,12 +2100,19 @@ def add_m4a_metadata(
         ]
 
     if cover_path.exists():
-        audio["covr"] = [
-            MP4Cover(
-                cover_path.read_bytes(),
-                imageformat=MP4Cover.FORMAT_JPEG,
-            )
-        ]
+        image_data = cover_path.read_bytes()
+        format_name = detect_image_format(image_data)
+
+        # MP4 cover art supports JPEG and PNG. Embedding a GIF or WebP as
+        # JPEG would mislabel the bytes, so leave it out for this format.
+        if format_name == "jpeg":
+            audio["covr"] = [
+                MP4Cover(image_data, imageformat=MP4Cover.FORMAT_JPEG)
+            ]
+        elif format_name == "png":
+            audio["covr"] = [
+                MP4Cover(image_data, imageformat=MP4Cover.FORMAT_PNG)
+            ]
 
     audio.save()
 
@@ -2046,7 +2152,11 @@ def append_line(path: Path, text: str):
 
 
 def download_best_cover(metadata, video, cover_path, youtube_enabled):
-    """Download provider artwork, then fall back to a YouTube thumbnail."""
+    """Download provider artwork, then fall back to a YouTube thumbnail.
+
+    Returns the path of the saved image with an extension that matches the
+    actual image signature, or None when no usable image was downloaded.
+    """
     candidates = []
 
     if metadata.get("cover_url"):
@@ -2059,14 +2169,39 @@ def download_best_cover(metadata, video, cover_path, youtube_enabled):
             candidates.append((url, "YouTube"))
 
     last_error = None
+    cover_path = Path(cover_path)
 
     for url, source in candidates:
         try:
-            download_cover(url, cover_path)
+            result = download_cover(url, cover_path)
 
-            if cover_path.exists() and cover_path.stat().st_size > 0:
+            if isinstance(result, Path):
+                actual_path = result
+            elif result in IMAGE_FORMATS:
+                actual_path = cover_path.with_suffix(
+                    IMAGE_FORMATS[result][1]
+                )
+            else:
+                actual_path = cover_path
+
+            if not actual_path.exists():
+                actual_path = cover_path
+
+            image_data = actual_path.read_bytes()
+            format_name = detect_image_format(image_data)
+
+            if format_name is None:
+                raise ValueError("response is not a valid image")
+
+            extension = IMAGE_FORMATS[format_name][1]
+            final_path = actual_path.with_suffix(extension)
+
+            if actual_path != final_path:
+                actual_path.replace(final_path)
+
+            if final_path.stat().st_size > 0:
                 print(f"{source} cover downloaded")
-                return True
+                return final_path
 
         except Exception as error:
             last_error = error
@@ -2074,7 +2209,7 @@ def download_best_cover(metadata, video, cover_path, youtube_enabled):
     if last_error is not None:
         print(f"WARNING: cover download failed: {last_error}")
 
-    return False
+    return None
 
 
 def process_song(
@@ -2175,14 +2310,15 @@ def process_song(
         if not audio_path:
             return False, "yt-dlp download failed"
 
-        cover_path = temp_dir / "cover.jpg"
-
-        download_best_cover(
+        cover_path = download_best_cover(
             metadata,
             video,
-            cover_path,
+            temp_dir / "cover",
             youtube_enabled,
         )
+
+        if cover_path is None:
+            cover_path = temp_dir / "cover.jpg"
 
         try:
             add_metadata(

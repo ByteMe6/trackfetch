@@ -159,8 +159,11 @@ class TestSourceResolution:
 
     def test_disable_sources_from_config(self):
         config = m.build_source_config(
-            make_args(metadata_sources="deezer,itunes"),
-            {"disable_sources": "deezer"},
+            make_args(),
+            {
+                "metadata_sources": "deezer,itunes",
+                "disable_sources": "deezer",
+            },
         )
 
         assert config.metadata_sources == ["itunes"]
@@ -267,14 +270,19 @@ class TestSourceResolution:
                 {},
             )
 
-    def test_thresholds_are_clamped(self):
-        config = m.build_source_config(
-            make_args(match_threshold=5, title_threshold=-3),
-            {},
-        )
+    def test_negative_threshold_is_rejected(self):
+        with pytest.raises(ValueError, match="between 0.0 and 1.0"):
+            m.build_source_config(
+                make_args(match_threshold=-0.1),
+                {},
+            )
 
-        assert config.match_threshold == 1.0
-        assert config.title_threshold == 0.0
+    def test_threshold_above_one_is_rejected(self):
+        with pytest.raises(ValueError, match="between 0.0 and 1.0"):
+            m.build_source_config(
+                make_args(title_threshold=1.1),
+                {},
+            )
 
     def test_thresholds_from_config(self):
         config = m.build_source_config(
@@ -284,6 +292,267 @@ class TestSourceResolution:
 
         assert config.match_threshold == 0.4
         assert config.title_threshold == 0.7
+
+
+class TestNumericValidation:
+    @pytest.mark.parametrize("value", [0.0, 0.5, 1.0, "0.25"])
+    def test_valid_thresholds_are_accepted(self, value):
+        config = m.build_source_config(
+            make_args(match_threshold=value, title_threshold=value),
+            {},
+        )
+
+        assert config.match_threshold == float(value)
+        assert config.title_threshold == float(value)
+
+    @pytest.mark.parametrize(
+        "value",
+        [-0.1, 1.1, float("nan"), float("inf"), float("-inf"), "not-a-number"],
+    )
+    def test_invalid_match_threshold_is_rejected(self, value):
+        with pytest.raises(ValueError, match="match_threshold"):
+            m.build_source_config(make_args(match_threshold=value), {})
+
+    @pytest.mark.parametrize(
+        "value",
+        [-0.1, 1.1, float("nan"), float("inf"), float("-inf"), "not-a-number"],
+    )
+    def test_invalid_title_threshold_is_rejected(self, value):
+        with pytest.raises(ValueError, match="title_threshold"):
+            m.build_source_config(make_args(title_threshold=value), {})
+
+    @pytest.mark.parametrize(
+        "value",
+        ["-0.1", "1.1", "nan", "inf", "-inf", "not-a-number"],
+    )
+    def test_invalid_threshold_from_config_is_rejected(self, value):
+        with pytest.raises(ValueError, match="match_threshold"):
+            m.build_source_config(
+                make_args(),
+                {"match_threshold": value},
+            )
+
+    @pytest.mark.parametrize("value", ["0", "0.25", "3.0"])
+    def test_valid_provider_intervals_are_accepted(self, value):
+        config = m.build_source_config(
+            make_args(),
+            {"deezer_min_interval": value},
+        )
+
+        assert config.providers["deezer"]["min_interval"] == float(value)
+
+    def test_zero_interval_is_preserved(self):
+        config = m.build_source_config(make_args(), {})
+
+        assert config.providers["spotify"]["min_interval"] == 0.0
+
+    @pytest.mark.parametrize(
+        "value",
+        ["-1", "nan", "inf", "-inf", "not-a-number"],
+    )
+    def test_invalid_provider_interval_from_config_is_rejected(self, value):
+        with pytest.raises(ValueError, match="deezer_min_interval"):
+            m.build_source_config(
+                make_args(),
+                {"deezer_min_interval": value},
+            )
+
+    @pytest.mark.parametrize(
+        "value",
+        ["-1", "nan", "inf", "-inf", "not-a-number"],
+    )
+    def test_invalid_provider_interval_from_cli_is_rejected(self, value):
+        with pytest.raises(ValueError, match="deezer.min_interval"):
+            m.build_source_config(
+                make_args(provider_opt=[f"deezer.min_interval={value}"]),
+                {},
+            )
+
+    def test_provider_defaults_are_valid(self):
+        config = m.build_source_config(make_args(), {})
+
+        for name, defaults in m.PROVIDER_DEFAULTS.items():
+            assert (
+                config.providers[name]["min_interval"]
+                == defaults["min_interval"]
+            )
+
+
+class TestCliPrecedence:
+    def test_cli_selection_overrides_config_disable_sources(self):
+        settings = {
+            "metadata_sources": "itunes",
+            "disable_sources": "deezer",
+            "deezer_enabled": "false",
+        }
+
+        config = m.build_source_config(
+            make_args(metadata_sources="deezer"),
+            settings,
+        )
+
+        assert config.metadata_sources == ["deezer"]
+        assert config.is_enabled("deezer")
+        assert not config.providers["deezer"]["disabled"]
+
+    def test_config_enabled_provider_is_disabled_by_cli(self):
+        config = m.build_source_config(
+            make_args(disable_sources="deezer"),
+            {"metadata_sources": "deezer,itunes"},
+        )
+
+        assert config.metadata_sources == ["itunes"]
+        assert not config.is_enabled("deezer")
+
+    def test_cli_changes_config_source_order(self):
+        config = m.build_source_config(
+            make_args(metadata_sources="deezer,itunes"),
+            {"metadata_sources": "itunes,deezer"},
+        )
+
+        assert config.metadata_sources == ["deezer", "itunes"]
+
+    def test_cli_none_keeps_youtube_enabled(self):
+        config = m.build_source_config(
+            make_args(metadata_sources="none"),
+            {
+                "metadata_sources": "deezer,itunes",
+                "deezer_enabled": "true",
+            },
+        )
+
+        assert config.metadata_sources == []
+        assert config.none_selected
+        assert config.youtube_enabled
+
+    def test_cli_selection_with_youtube_enabled(self):
+        config = m.build_source_config(
+            make_args(metadata_sources="deezer"),
+            {"metadata_sources": "itunes", "youtube_enabled": "true"},
+        )
+
+        assert config.metadata_sources == ["deezer"]
+        assert config.youtube_enabled
+
+    def test_cli_selection_with_youtube_disabled(self):
+        config = m.build_source_config(
+            make_args(
+                metadata_sources="deezer",
+                disable_sources="youtube",
+            ),
+            {"metadata_sources": "itunes"},
+        )
+
+        assert config.metadata_sources == ["deezer"]
+        assert not config.youtube_enabled
+
+    def test_config_disabled_youtube_stays_disabled_with_cli_selection(self):
+        config = m.build_source_config(
+            make_args(metadata_sources="deezer"),
+            {"metadata_sources": "itunes", "youtube_enabled": "false"},
+        )
+
+        assert config.metadata_sources == ["deezer"]
+        assert not config.youtube_enabled
+
+    def test_cli_disable_wins_over_cli_selection(self):
+        config = m.build_source_config(
+            make_args(
+                metadata_sources="deezer,itunes",
+                disable_sources="deezer",
+            ),
+            {},
+        )
+
+        assert config.metadata_sources == ["itunes"]
+        assert not config.is_enabled("deezer")
+
+    def test_cli_disable_wins_over_cli_provider_enable(self):
+        config = m.build_source_config(
+            make_args(
+                provider_opt=["deezer.enabled=true"],
+                disable_sources="deezer",
+            ),
+            {},
+        )
+
+        assert config.metadata_sources == ["itunes"]
+        assert not config.is_enabled("deezer")
+
+    def test_cli_provider_enable_overrides_config_disable_sources(self):
+        config = m.build_source_config(
+            make_args(provider_opt=["deezer.enabled=true"]),
+            {
+                "metadata_sources": "itunes",
+                "disable_sources": "deezer",
+            },
+        )
+
+        assert config.metadata_sources == ["itunes", "deezer"]
+        assert config.is_enabled("deezer")
+
+    def test_disabled_provider_is_never_queried(self, monkeypatch):
+        calls = []
+
+        def fake_deezer(runtime, artist, title, config):
+            calls.append("deezer")
+            return [{"title": title, "artist": artist}]
+
+        def fake_itunes(runtime, artist, title, config):
+            calls.append("itunes")
+            return [{"title": title, "artist": artist, "source": "itunes"}]
+
+        monkeypatch.setitem(m.PROVIDER_FUNCTIONS, "deezer", fake_deezer)
+        monkeypatch.setitem(m.PROVIDER_FUNCTIONS, "itunes", fake_itunes)
+        config = m.build_source_config(
+            make_args(),
+            {
+                "metadata_sources": "deezer,itunes",
+                "disable_sources": "deezer",
+            },
+        )
+
+        result = m.resolve_metadata(
+            "Daft Punk",
+            "One More Time",
+            config,
+            make_runtime(),
+        )
+
+        assert result["source"] == "itunes"
+        assert calls == ["itunes"]
+
+    def test_config_remains_unchanged_after_cli_overrides(self):
+        settings = {
+            "metadata_sources": "itunes",
+            "disable_sources": "deezer",
+            "deezer_enabled": "false",
+            "youtube_enabled": "true",
+        }
+        original = dict(settings)
+
+        m.build_source_config(
+            make_args(
+                metadata_sources="deezer",
+                disable_sources="youtube",
+            ),
+            settings,
+        )
+
+        assert settings == original
+
+    def test_config_disabled_provider_is_not_promoted_by_cli_selection(self):
+        config = m.build_source_config(
+            make_args(metadata_sources="itunes"),
+            {
+                "metadata_sources": "itunes",
+                "disable_sources": "vocadb",
+            },
+        )
+
+        assert m.effective_metadata_sources(
+            config, "初音ミク", "消失"
+        ) == ["itunes"]
 
 
 class TestVocadbPromotion:
@@ -898,6 +1167,49 @@ class TestMetadataCache:
         assert cache.get("A", "B", "itunes")["source"] == "itunes"
         assert cache.get("A", "B", "deezer")["source"] == "deezer"
 
+    def test_incomplete_result_does_not_overwrite_better_entry(self, tmp_path):
+        path = tmp_path / m.CACHE_FILENAME
+        cache = m.MetadataCache(path)
+        cache.set(
+            "A",
+            "B",
+            "itunes",
+            {"title": "B", "artist": "A", "source": "itunes"},
+        )
+
+        assert cache.set("A", "B", "itunes", {"title": None}) is False
+        assert cache.get("A", "B", "itunes")["title"] == "B"
+
+    def test_lower_scored_result_does_not_replace_better_entry(self, tmp_path):
+        cache = m.MetadataCache(tmp_path / m.CACHE_FILENAME)
+        cache.set(
+            "A",
+            "B",
+            "itunes",
+            {"title": "B", "artist": "A", "score": 0.9},
+        )
+
+        assert cache.set(
+            "A",
+            "B",
+            "itunes",
+            {"title": "B", "artist": "A", "score": 0.5},
+        ) is False
+        assert cache.get("A", "B", "itunes")["score"] == 0.9
+
+    def test_unrelated_entries_survive_a_new_write(self, tmp_path):
+        path = tmp_path / m.CACHE_FILENAME
+        cache = m.MetadataCache(path)
+        cache.set("A", "B", "itunes", {"title": "B", "source": "itunes"})
+        cache.set("C", "D", "deezer", {"title": "D", "source": "deezer"})
+        cache.set("A", "B", "deezer", {"title": "B", "source": "deezer"})
+
+        reloaded = m.MetadataCache(path)
+
+        assert reloaded.get("A", "B", "itunes")["source"] == "itunes"
+        assert reloaded.get("A", "B", "deezer")["source"] == "deezer"
+        assert reloaded.get("C", "D", "deezer")["source"] == "deezer"
+
     def test_corrupted_cache_is_handled(self, tmp_path):
         path = tmp_path / m.CACHE_FILENAME
         path.write_text("not json at all", encoding="utf-8")
@@ -912,6 +1224,47 @@ class TestMetadataCache:
         path.write_text(json.dumps({"entries": []}), encoding="utf-8")
 
         assert m.MetadataCache(path).entries == {}
+
+    def test_disabled_provider_cache_is_not_used(
+        self, monkeypatch, tmp_path
+    ):
+        calls = []
+
+        def fake_itunes(runtime, artist, title, config):
+            calls.append("itunes")
+            return [{"title": title, "artist": artist, "source": "itunes"}]
+
+        monkeypatch.setitem(m.PROVIDER_FUNCTIONS, "itunes", fake_itunes)
+        cache = m.MetadataCache(tmp_path / m.CACHE_FILENAME)
+        cache.set(
+            "Daft Punk",
+            "One More Time",
+            "deezer",
+            {
+                "title": "Wrong cached result",
+                "artist": "Daft Punk",
+                "source": "deezer",
+                "score": 1.0,
+            },
+        )
+        runtime = make_runtime(cache=cache)
+        config = m.build_source_config(
+            make_args(),
+            {
+                "metadata_sources": "deezer,itunes",
+                "disable_sources": "deezer",
+            },
+        )
+
+        result = m.resolve_metadata(
+            "Daft Punk",
+            "One More Time",
+            config,
+            runtime,
+        )
+
+        assert result["source"] == "itunes"
+        assert calls == ["itunes"]
 
     def test_cached_priority_result_is_used(self, monkeypatch, tmp_path):
         calls = []
@@ -963,8 +1316,159 @@ class TestArtwork:
     def test_image_validation(self):
         assert m.is_image_bytes(b"\xff\xd8\xff\xe0data")
         assert m.is_image_bytes(b"\x89PNG\r\n\x1a\n")
+        assert m.is_image_bytes(b"GIF87a")
+        assert m.is_image_bytes(b"GIF89a")
+        assert m.is_image_bytes(b"RIFF\x00\x00\x00\x00WEBP")
         assert not m.is_image_bytes(b"<html>not an image</html>")
         assert not m.is_image_bytes(b"")
+        assert not m.is_image_bytes(b"RIFF\x00\x00\x00\x00WAVE")
+        assert not m.is_image_bytes(b"WEBP\x00\x00\x00\x00RIFF")
+
+    @pytest.mark.parametrize(
+        ("data", "expected"),
+        [
+            (b"\xff\xd8\xff\xe0data", "jpeg"),
+            (b"\x89PNG\r\n\x1a\n", "png"),
+            (b"GIF87a", "gif"),
+            (b"GIF89a", "gif"),
+            (b"RIFF\x00\x00\x00\x00WEBP", "webp"),
+        ],
+    )
+    def test_image_format_detection(self, data, expected):
+        assert m.detect_image_format(data) == expected
+
+    def test_image_extensions_and_mime_types_match_signature(self):
+        assert m.IMAGE_FORMATS["jpeg"] == ("image/jpeg", ".jpg")
+        assert m.IMAGE_FORMATS["png"] == ("image/png", ".png")
+        assert m.IMAGE_FORMATS["gif"] == ("image/gif", ".gif")
+        assert m.IMAGE_FORMATS["webp"] == ("image/webp", ".webp")
+
+    def test_download_cover_uses_signature_not_content_type(
+        self, monkeypatch, tmp_path
+    ):
+        class Response:
+            content = b"\x89PNG\r\n\x1a\nrest"
+            headers = {"Content-Type": "image/jpeg"}
+
+            def raise_for_status(self):
+                pass
+
+        monkeypatch.setattr(
+            m.requests,
+            "get",
+            lambda *a, **k: Response(),
+        )
+        destination = tmp_path / "cover.jpg"
+
+        format_name = m.download_cover("https://img/cover.jpg", destination)
+
+        assert format_name == "png"
+        assert (tmp_path / "cover.png").read_bytes() == Response.content
+        assert not destination.exists()
+
+    @pytest.mark.parametrize(
+        "content",
+        [b"", b"<html>not an image</html>", b"RIFF\x00\x00\x00\x00WAVE"],
+    )
+    def test_download_cover_rejects_invalid_images(
+        self, monkeypatch, tmp_path, content
+    ):
+        class Response:
+            def raise_for_status(self):
+                pass
+
+        response = Response()
+        response.content = content
+        monkeypatch.setattr(
+            m.requests,
+            "get",
+            lambda *a, **k: response,
+        )
+
+        with pytest.raises(ValueError, match="valid image"):
+            m.download_cover("https://img/cover.jpg", tmp_path / "cover")
+
+    @pytest.mark.parametrize(
+        ("content", "extension"),
+        [
+            (b"\xff\xd8\xff\xe0data", ".jpg"),
+            (b"\x89PNG\r\n\x1a\nrest", ".png"),
+            (b"GIF89a-rest", ".gif"),
+            (b"RIFF\x00\x00\x00\x00WEBP-rest", ".webp"),
+        ],
+    )
+    def test_download_best_cover_uses_actual_extension(
+        self, monkeypatch, tmp_path, content, extension
+    ):
+        class Response:
+            pass
+
+        response = Response()
+        response.content = content
+
+        def raise_for_status():
+            pass
+
+        response.raise_for_status = raise_for_status
+        monkeypatch.setattr(
+            m.requests,
+            "get",
+            lambda *a, **k: response,
+        )
+        metadata = {
+            "cover_url": "https://img/cover.jpg",
+            "source": "itunes",
+        }
+
+        path = m.download_best_cover(
+            metadata,
+            None,
+            tmp_path / "cover",
+            False,
+        )
+
+        assert path == tmp_path / f"cover{extension}"
+        assert path.read_bytes() == content
+        assert not (tmp_path / "cover").exists()
+
+    def test_download_best_cover_falls_back_after_invalid_image(
+        self, monkeypatch, tmp_path
+    ):
+        class Response:
+            def __init__(self, content, status=200):
+                self.content = content
+                self.status_code = status
+
+            def raise_for_status(self):
+                if self.status_code >= 400:
+                    raise requests.HTTPError("bad image")
+
+        responses = [
+            Response(b"<html>broken</html>"),
+            Response(b"\x89PNG\r\n\x1a\nrest"),
+        ]
+
+        def fake_get(url, **kwargs):
+            return responses.pop(0)
+
+        monkeypatch.setattr(m.requests, "get", fake_get)
+        metadata = {
+            "cover_url": "https://img/cover.jpg",
+            "source": "itunes",
+        }
+        video = {
+            "id": "abc",
+            "thumbnails": [{"url": "https://yt/thumb.jpg"}],
+        }
+
+        path = m.download_best_cover(
+            metadata,
+            video,
+            tmp_path / "cover",
+            True,
+        )
+
+        assert path == tmp_path / "cover.png"
 
 
 class TestCli:
@@ -1000,19 +1504,31 @@ class TestCli:
         assert exc.value.code == 1
         assert "Invalid --provider-opt" in capsys.readouterr().out
 
-    def test_thresholds_are_shown_and_clamped(self, monkeypatch, capsys):
+    def test_invalid_thresholds_are_rejected(self, monkeypatch, capsys):
+        with pytest.raises(SystemExit) as exc:
+            run_cli(
+                monkeypatch,
+                "--match-threshold",
+                "5",
+                "--list-sources",
+            )
+
+        assert exc.value.code == 1
+        assert "must be between 0.0 and 1.0" in capsys.readouterr().out
+
+    def test_valid_thresholds_are_shown(self, monkeypatch, capsys):
         run_cli(
             monkeypatch,
             "--match-threshold",
-            "5",
+            "0",
             "--title-threshold",
-            "-1",
+            "1",
             "--list-sources",
         )
 
         output = capsys.readouterr().out
-        assert "Match threshold: 1.0" in output
-        assert "Title threshold: 0.0" in output
+        assert "Match threshold: 0.0" in output
+        assert "Title threshold: 1.0" in output
 
     def test_invalid_threshold_type_is_rejected_by_argparse(
         self, monkeypatch, capsys
@@ -1032,6 +1548,62 @@ class TestYoutubeFallback:
             lambda artist, title: calls.append((artist, title)),
         )
         config = make_config([], youtube=False, none_selected=True)
+
+        ok, reason = m.process_song(
+            None,
+            "Daft Punk",
+            "One More Time",
+            tmp_path,
+            False,
+            "m4a",
+            source_config=config,
+            runtime=make_runtime(),
+        )
+
+        assert (ok, reason) == (False, "YouTube disabled")
+        assert calls == []
+
+    def test_cli_youtube_disable_prevents_network_calls(
+        self, monkeypatch, tmp_path
+    ):
+        calls = []
+        monkeypatch.setattr(
+            m,
+            "find_youtube_video",
+            lambda artist, title: calls.append((artist, title)),
+        )
+        config = m.build_source_config(
+            make_args(disable_sources="youtube"),
+            {},
+        )
+
+        ok, reason = m.process_song(
+            None,
+            "Daft Punk",
+            "One More Time",
+            tmp_path,
+            False,
+            "m4a",
+            source_config=config,
+            runtime=make_runtime(),
+        )
+
+        assert (ok, reason) == (False, "YouTube disabled")
+        assert calls == []
+
+    def test_config_youtube_disable_prevents_network_calls(
+        self, monkeypatch, tmp_path
+    ):
+        calls = []
+        monkeypatch.setattr(
+            m,
+            "find_youtube_video",
+            lambda artist, title: calls.append((artist, title)),
+        )
+        config = m.build_source_config(
+            make_args(),
+            {"youtube_enabled": "false"},
+        )
 
         ok, reason = m.process_song(
             None,
