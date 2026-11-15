@@ -11,6 +11,10 @@ from mutagen.oggopus import OggOpus
 import trackfetch as m
 
 JPEG = b"\xff\xd8\xff\xe0fake-jpeg"
+PNG = b"\x89PNG\r\n\x1a\nfake-png"
+GIF = b"GIF89afake-gif"
+WEBP = b"RIFF\x00\x00\x00\x00WEBPfake-webp"
+INVALID_IMAGE = b"<html>not an image</html>"
 
 
 @pytest.fixture
@@ -206,3 +210,89 @@ class TestDoneFile:
         done = tmp_path / "done.txt"
         done.write_text("  A - B  \n\n\nC - D\n", encoding="utf-8")
         assert m.read_done(done) == {"A - B", "C - D"}
+
+
+class TestCoverFormatMimeTypes:
+    @pytest.mark.parametrize(
+        ("data", "mime"),
+        [
+            (JPEG, "image/jpeg"),
+            (PNG, "image/png"),
+            (GIF, "image/gif"),
+            (WEBP, "image/webp"),
+        ],
+    )
+    def test_mp3_embeds_matching_mime(self, mp3, tmp_path, metadata, data, mime):
+        cover = tmp_path / "cover.img"
+        cover.write_bytes(data)
+
+        m.add_metadata(mp3, cover, metadata)
+
+        apic = ID3(mp3).getall("APIC")[0]
+        assert apic.data == data
+        assert apic.mime == mime
+
+    def test_mp3_skips_invalid_cover(self, mp3, tmp_path, metadata):
+        cover = tmp_path / "cover.img"
+        cover.write_bytes(INVALID_IMAGE)
+
+        m.add_metadata(mp3, cover, metadata)
+
+        assert not ID3(mp3).getall("APIC")
+
+    @pytest.mark.parametrize(
+        ("data", "mime"),
+        [
+            (JPEG, "image/jpeg"),
+            (PNG, "image/png"),
+            (GIF, "image/gif"),
+            (WEBP, "image/webp"),
+        ],
+    )
+    def test_opus_embeds_matching_mime(self, opus, tmp_path, metadata, data, mime):
+        cover = tmp_path / "cover.img"
+        cover.write_bytes(data)
+
+        m.add_metadata(opus, cover, metadata)
+
+        picture = opus_picture(OggOpus(opus))
+        assert picture.data == data
+        assert picture.mime == mime
+
+    def test_opus_skips_invalid_cover(self, opus, tmp_path, metadata):
+        cover = tmp_path / "cover.img"
+        cover.write_bytes(INVALID_IMAGE)
+
+        m.add_metadata(opus, cover, metadata)
+
+        assert "METADATA_BLOCK_PICTURE" not in OggOpus(opus)
+
+    @pytest.mark.parametrize(
+        ("data", "image_format"),
+        [
+            (JPEG, MP4Cover.FORMAT_JPEG),
+            (PNG, MP4Cover.FORMAT_PNG),
+        ],
+    )
+    def test_m4a_embeds_supported_formats(
+        self, m4a, tmp_path, metadata, data, image_format
+    ):
+        cover = tmp_path / "cover.img"
+        cover.write_bytes(data)
+
+        m.add_metadata(m4a, cover, metadata)
+
+        covr = MP4(m4a)["covr"][0]
+        assert bytes(covr) == data
+        assert covr.imageformat == image_format
+
+    @pytest.mark.parametrize("data", [GIF, WEBP, INVALID_IMAGE])
+    def test_m4a_does_not_mislabel_unsupported_formats(
+        self, m4a, tmp_path, metadata, data
+    ):
+        cover = tmp_path / "cover.img"
+        cover.write_bytes(data)
+
+        m.add_metadata(m4a, cover, metadata)
+
+        assert "covr" not in MP4(m4a)

@@ -27,6 +27,13 @@ def pipeline(monkeypatch):
             shutil.copy(FIXTURES / f"silence.{audio_format}", path)
         return path
 
+    def fake_resolve_metadata(artist, title, source_config, runtime):
+        track = fake_find_spotify(None, artist, title)
+        metadata = m.get_track_metadata(track, artist, title)
+        metadata.update(source="spotify", source_id=track.get("id"), score=1.0)
+        return metadata
+
+    monkeypatch.setattr(m, "resolve_metadata", fake_resolve_metadata)
     monkeypatch.setattr(m, "find_spotify_track", fake_find_spotify)
     monkeypatch.setattr(m, "find_youtube_video", lambda a, t: state["video"])
     monkeypatch.setattr(m, "download_audio", fake_download_audio)
@@ -224,6 +231,25 @@ class TestEdgeCases:
 
         assert exc.value.code == 1
         assert "must not be negative" in capsys.readouterr().out
+
+    @pytest.mark.parametrize("value", ["nan", "inf", "-inf"])
+    def test_non_finite_delay_exits(
+        self, pipeline, monkeypatch, tmp_path, capsys, value
+    ):
+        songs = tmp_path / "songs.txt"
+        songs.write_text("Daft Punk - One More Time\n", encoding="utf-8")
+
+        with pytest.raises(SystemExit) as exc:
+            run_cli(
+                monkeypatch,
+                songs,
+                "-o",
+                tmp_path / "o",
+                f"--delay={value}",
+            )
+
+        assert exc.value.code == 1
+        assert "must be a finite number" in capsys.readouterr().out
 
     def test_bom_is_stripped(self, pipeline, monkeypatch, tmp_path):
         songs = tmp_path / "songs.txt"

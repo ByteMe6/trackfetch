@@ -31,10 +31,10 @@
 
 <br>
 
-trackfetch reads a plain text file with one `Artist - Title` per line. For every song it looks up the official metadata and cover art on Spotify, picks the best-matching audio on YouTube, and saves an MP3 with complete ID3 tags. Runs are resumable, so you can stop a 1,000-song list at any point and pick it up later.
+trackfetch reads a plain text file with one `Artist - Title` per line. For every song it looks up metadata and cover art in the configured free sources, picks the best-matching audio on YouTube, and saves an MP3 with complete ID3 tags. Runs are resumable, so you can stop a 1,000-song list at any point and pick it up later.
 
-- **Exact metadata.** The title, every credited artist, album, album artist, track number and release date come from Spotify, not from a YouTube video title.
-- **Album art.** The largest Spotify cover is embedded in every file.
+- **Configurable metadata.** Use iTunes (the default), Deezer, MusicBrainz, VocaDB and optional Spotify. Put them in any priority order with `-s`, or turn them off one by one.
+- **Album art.** Artwork comes from the winning metadata source, then the Cover Art Archive for MusicBrainz, then the YouTube thumbnail. The largest available image is embedded in every file.
 - **The right upload.** trackfetch scores five YouTube results per song. Official audio wins; covers, karaoke, nightcore, sped-up, slowed, remix and reaction videos lose.
 - **Your choice of format.** MP3 for any player, or Opus and M4A that keep YouTube's original audio without re-encoding.
 - **Resumable.** Finished songs are logged in `done.txt` and skipped next time. Failures go to `failed.txt` with the reason.
@@ -44,7 +44,7 @@ trackfetch reads a plain text file with one `Artist - Title` per line. For every
 
 ## Install
 
-Pick one. Homebrew and Nix also install yt-dlp, FFmpeg and Deno for you; with the other methods, install them yourself ([see below](#dependencies)). Every method needs a free Spotify API key ([set it up below](#spotify-credentials)).
+Pick one. Homebrew and Nix also install yt-dlp, FFmpeg and Deno for you; with the other methods, install them yourself ([see below](#dependencies)). The default iTunes source needs no API key. A free Spotify API key is optional and only needed if you select Spotify ([set it up below](#spotify-credentials)).
 
 ### Homebrew
 
@@ -182,7 +182,7 @@ trackfetch "My Playlist.txt" -o ~/Music/"My Playlist"
 ## Usage
 
 ```text
-trackfetch [-h] [--track ARTIST - TITLE ...] [-o OUTPUT] [--config CONFIG] [-f {mp3,m4a,opus}] [--title-only] [--delay DELAY] [--spotify-client-id ID] [--spotify-client-secret SECRET] [INPUT ...]
+trackfetch [-h] [--track ARTIST - TITLE ...] [-o OUTPUT] [--config CONFIG] [-f {mp3,m4a,opus}] [--title-only] [--delay DELAY] [-s SOURCES] [--disable-sources SOURCES] [--provider-opt NAME.KEY=VALUE] [--match-threshold SCORE] [--title-threshold SCORE] [--list-sources] [--spotify-client-id ID] [--spotify-client-secret SECRET] [INPUT ...]
 ```
 
 | Option | Default | What it does |
@@ -194,6 +194,12 @@ trackfetch [-h] [--track ARTIST - TITLE ...] [-o OUTPUT] [--config CONFIG] [-f {
 | `-f`, `--format` | `m4a` | Audio format: `mp3`, `m4a` or `opus`. See [Audio formats](#audio-formats). |
 | `--title-only` | off | Name files `Title.m4a` instead of `Artist - Title.m4a` |
 | `--delay` | `1.0` | Seconds to wait between songs. Raise it for long lists. |
+| `-s`, `--metadata-sources` | `itunes` | Comma-separated metadata priority, for example `deezer,itunes,musicbrainz`. `none` disables metadata lookups but keeps YouTube. A CLI selection overrides configured disabling for the selected providers. |
+| `--disable-sources` | — | Comma-separated sources to disable, for example `spotify,youtube`. Takes precedence over a CLI metadata selection for the same provider. |
+| `--provider-opt` | — | Provider setting as `NAME.KEY=VALUE`, for example `itunes.country=ua`. Can be repeated. |
+| `--match-threshold` | `0.6` | Minimum overall match score, from `0.0` to `1.0`. Values outside that range, NaN and infinities are rejected. |
+| `--title-threshold` | `0.8` | Minimum title similarity, from `0.0` to `1.0`. Values outside that range, NaN and infinities are rejected. |
+| `--list-sources` | — | Show available metadata providers and artwork fallbacks, then exit. Makes no network requests. |
 | `--spotify-client-id` | `$SPOTIFY_CLIENT_ID` | Spotify API client ID. See [Spotify credentials](#spotify-credentials). |
 | `--spotify-client-secret` | `$SPOTIFY_CLIENT_SECRET` | Spotify API client secret. |
 
@@ -204,7 +210,62 @@ trackfetch big-list.txt --delay 3                 # go easy on rate limits
 trackfetch songs.txt --format opus                # original YouTube audio, no re-encode
 trackfetch "Daft Punk - One More Time"             # one track, no file needed
 trackfetch "A - B" "C - D" --track "E - F"         # a few tracks in one go
+trackfetch big-list.txt -s deezer,itunes,musicbrainz
+trackfetch big-list.txt --disable-sources spotify  # skip Spotify explicitly
+trackfetch --list-sources
 ```
+
+### Metadata sources
+
+The default metadata source is **iTunes**, which needs no API key. YouTube is
+always handled separately: it supplies the audio and is the last artwork
+fallback. The other providers are off unless you select or enable them:
+
+| Source | Credentials | Minimum interval | Notes |
+| --- | --- | --- | --- |
+| `itunes` | none | 3.0 s | Storefront country defaults to `us` |
+| `deezer` | none | 0.25 s | Public search |
+| `musicbrainz` | none | 1.1 s | Cover art comes from the Cover Art Archive |
+| `vocadb` | none | 0.5 s | Japanese, Chinese, Korean and Vocaloid metadata |
+| `spotify` | client ID and secret | — | Optional, disabled by default |
+
+The order in `-s` is the lookup priority. If the first provider has no suitable
+match, trackfetch tries the next one. The first result that passes both
+matching thresholds wins. Command-line choices override the config file for
+that run: `-s deezer` enables Deezer even if the config disables it, while
+`--disable-sources deezer` still disables it. Both thresholds must be finite
+numbers from `0.0` to `1.0`; invalid values stop with an error instead of being
+silently clamped.
+
+```bash
+trackfetch songs.txt -s deezer,itunes,musicbrainz,vocadb
+trackfetch songs.txt -s none                       # no metadata, YouTube audio only
+trackfetch songs.txt --provider-opt itunes.country=ua
+trackfetch songs.txt --provider-opt musicbrainz.min_interval=1.5
+trackfetch songs.txt --match-threshold 0.7 --title-threshold 0.85
+```
+
+CJK titles and recognizable Vocaloid hints temporarily promote VocaDB for that
+lookup. The configured order is not changed. YouTube remains enabled unless it
+is explicitly disabled, even with `-s none`. Disabling YouTube also disables
+the audio download, because YouTube is the only audio source.
+
+Provider failures are handled internally: after two consecutive real failures
+(for example a timeout or an HTTP server error) the provider cools down for
+30 seconds. The cooldown doubles on each further failure, up to 600 seconds.
+A valid empty search, a missing match or missing artwork is not a failure. The
+provider is retried after the cooldown and returns to its configured priority
+when it recovers.
+
+Metadata is cached per provider in `metadata-cache.json` in the output
+directory. A lower-priority cached result never prevents a higher-priority
+provider from being retried after recovery.
+
+Artwork is identified by its actual bytes, not by the URL or the HTTP
+`Content-Type` header. JPEG, PNG, GIF and WebP keep their real extension and
+MIME type. MP3 and Opus can embed all four; M4A supports JPEG and PNG, so GIF or
+WebP artwork is skipped for that container instead of being mislabelled as
+JPEG.
 
 ### Inline tracks
 
@@ -231,17 +292,53 @@ format = m4a
 title_only = false
 delay = 1.0
 input = ~/songs.txt
+
+# Metadata source priority
+metadata_sources = deezer,itunes,musicbrainz,vocadb
+
+# Sources to exclude
+disable_sources = spotify
+
+# Provider settings
+spotify_enabled = false
 spotify_client_id = your-client-id
 spotify_client_secret = your-client-secret
+
+itunes_enabled = true
+itunes_country = us
+itunes_min_interval = 3.0
+
+deezer_enabled = true
+deezer_min_interval = 0.25
+
+musicbrainz_enabled = true
+musicbrainz_min_interval = 1.1
+
+vocadb_enabled = true
+vocadb_min_interval = 0.5
+
+# YouTube artwork fallback
+youtube_enabled = true
+
+# Matching thresholds
+match_threshold = 0.6
+title_threshold = 0.8
 ```
 
-Every option above can be set there, under the `[trackfetch]` section, except
-`--track`, which only makes sense on the command line. The precedence is
-always the same:
+Most options above can be set there under the `[trackfetch]` section. Source
+priority and the provider settings use the keys shown in the example;
+`--track` and `--list-sources` only make sense on the command line. The
+precedence is always the same:
 
 1. the command-line flag,
 2. the config file,
 3. the built-in default (the current directory for the output folder).
+
+For source selection, a CLI `-s` list overrides both `metadata_sources` and
+conflicting `disable_sources`/`*_enabled=false` entries for the providers it
+names. An explicit CLI disable from `--disable-sources` or
+`--provider-opt NAME.enabled=false` wins over a CLI selection. The config file
+itself is never rewritten.
 
 trackfetch looks for the config file in this order: the path given with
 `--config`, the path in `$TRACKFETCH_CONFIG`, `trackfetch.ini` in the current
@@ -253,8 +350,10 @@ the directory you run trackfetch from. A `[DEFAULT]` section works as well.
 
 ### Spotify credentials
 
-trackfetch needs a Spotify client ID and secret to read the metadata. Give
-them in whichever way suits you:
+Spotify is optional and is not queried unless it is selected with
+`-s spotify` or `spotify_enabled = true`. Without credentials trackfetch skips
+Spotify quietly and uses the other sources. Give the credentials in whichever
+way suits you:
 
 ```bash
 # in the config file
@@ -323,7 +422,7 @@ A [tldr](https://tldr.sh/) page is in [`docs/tldr/trackfetch.md`](https://github
 
 ## How it works
 
-1. **Find the song on Spotify.** trackfetch searches for `artist:"…" track:"…"` and falls back to a looser search if nothing comes back. Every result is scored by fuzzy similarity, 70% title and 30% artist, and the best one supplies the official spelling, all credited artists, the album details and the cover.
+1. **Find the metadata.** trackfetch queries the configured providers in priority order. Every result is scored by fuzzy similarity, 70% title and 30% artist. Both the overall `match_threshold` and the `title_threshold` must pass, so an unrelated result is rejected instead of being used. The winning result supplies the title, artists, album details, release date and artwork.
 2. **Find the audio on YouTube.** It searches YouTube for the official artist and title and scores the top five results:
 
    | Signal | Effect on the score |
@@ -347,14 +446,21 @@ A [tldr](https://tldr.sh/) page is in [`docs/tldr/trackfetch.md`](https://github
    | `TDRC` | Release date |
    | `APIC` | Front cover, up to 640×640 |
 
-If Spotify has no match, the song is still downloaded and tagged with the artist and title from your file.
+If no metadata source has a suitable match, the song is still downloaded and tagged with the artist and title from your file. If the metadata result has no artwork, trackfetch tries the Cover Art Archive (for MusicBrainz) and then the YouTube thumbnail, so a missing cover never loses otherwise valid metadata.
 
 ## Troubleshooting
 
 <details>
-<summary><b><code>ERROR: Spotify credentials not found.</code></b></summary>
+<summary><b>Spotify is selected but no credentials are configured</b></summary>
 
-`SPOTIFY_CLIENT_ID` and `SPOTIFY_CLIENT_SECRET` aren't set in this terminal. See [Spotify credentials](#spotify-credentials).
+trackfetch skips Spotify quietly and continues with the remaining sources. To use Spotify, set `SPOTIFY_CLIENT_ID` and `SPOTIFY_CLIENT_SECRET` in the config file or the environment. See [Spotify credentials](#spotify-credentials).
+
+</details>
+
+<details>
+<summary><b>A provider is skipped temporarily</b></summary>
+
+After two consecutive network, timeout, server or parsing failures a provider is paused: 30 seconds at first, doubling up to 600 seconds. trackfetch keeps using the other sources and retries the provider when the cooldown expires. Empty search results and missing artwork do not trigger a cooldown.
 
 </details>
 
