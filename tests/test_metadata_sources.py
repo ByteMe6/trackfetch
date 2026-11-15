@@ -4,7 +4,6 @@ import sys
 
 import pytest
 import requests
-from conftest import make_track
 
 import trackfetch as m
 
@@ -1125,8 +1124,12 @@ class TestFailureRecovery:
         runtime = make_runtime(cache=cache, health=health)
         config = make_config(["deezer", "itunes"])
 
-        assert m.resolve_metadata("Daft Punk", "One More Time", config, runtime)["source"] == "itunes"
-        assert m.resolve_metadata("Daft Punk", "One More Time", config, runtime)["source"] == "itunes"
+        first = m.resolve_metadata("Daft Punk", "One More Time", config, runtime)
+        second = m.resolve_metadata(
+            "Daft Punk", "One More Time", config, runtime
+        )
+        assert first["source"] == "itunes"
+        assert second["source"] == "itunes"
         assert health.in_cooldown("deezer")
 
         state["deezer_ok"] = True
@@ -1619,8 +1622,9 @@ class TestYoutubeFallback:
         assert calls == []
 
     def test_none_metadata_still_uses_youtube(self, monkeypatch, tmp_path):
-        from conftest import FIXTURES
         import shutil
+
+        from conftest import FIXTURES
 
         video = {"title": "A - B", "id": "abc"}
         monkeypatch.setattr(m, "find_youtube_video", lambda a, t: video)
@@ -1652,3 +1656,382 @@ class TestYoutubeFallback:
 
         assert (ok, reason) == (True, "downloaded")
         assert (tmp_path / "A - B.m4a").exists()
+
+
+class TestMatchBranches:
+    def test_artist_similarity_without_candidate(self):
+        assert m.artist_similarity("Daft Punk", "") == 0.0
+
+    def test_candidate_without_title_is_rejected(self):
+        assert m.select_best_metadata(
+            [{"artist": "Daft Punk"}], "Daft Punk", "One More Time", 0.6, 0.8
+        ) is None
+
+    def test_candidate_below_overall_threshold_is_rejected(self):
+        candidate = {"title": "One More Time", "artist": "Someone Else"}
+
+        assert m.select_best_metadata(
+            [candidate], "Daft Punk", "One More Time", 0.99, 0.5
+        ) is None
+
+    def test_non_dict_candidate_is_skipped(self):
+        scored = m.select_best_metadata(
+            ["not a dict", {"title": "One More Time", "artist": "Daft Punk"}],
+            "Daft Punk",
+            "One More Time",
+            0.6,
+            0.8,
+        )
+
+        assert scored["artist"] == "Daft Punk"
+
+
+class TestSourceValidation:
+    def test_unknown_disable_source_is_rejected(self):
+        with pytest.raises(ValueError, match="Unknown source"):
+            m.build_source_config(make_args(disable_sources="napster"), {})
+
+    def test_invalid_boolean_is_rejected(self):
+        with pytest.raises(ValueError, match="Invalid boolean"):
+            m.parse_bool("maybe", "x")
+
+    def test_provider_opt_without_key_is_rejected(self):
+        with pytest.raises(ValueError, match="Invalid --provider-opt"):
+            m.build_source_config(make_args(provider_opt=["itunes=1"]), {})
+
+    def test_invalid_itunes_country_in_config_is_rejected(self):
+        with pytest.raises(ValueError, match="two-letter"):
+            m.build_source_config(make_args(), {"itunes_country": "ukraine"})
+
+    def test_provider_opt_disable_removes_provider(self):
+        config = m.build_source_config(
+            make_args(
+                metadata_sources="deezer,itunes",
+                provider_opt=["deezer.enabled=false"],
+            ),
+            {},
+        )
+
+        assert config.metadata_sources == ["itunes"]
+        assert not config.is_enabled("deezer")
+
+
+class TestProviderErrorBranches:
+    def test_itunes_skips_malformed_items(self):
+        session = FakeSession(
+            FakeResponse({"results": ["nope", {"trackId": 1}]})
+        )
+
+        candidates = m.itunes_provider(
+            make_runtime(session), "a", "b", make_config(["itunes"])
+        )
+
+        assert candidates == []
+
+    def test_deezer_non_dict_response(self):
+        runtime = make_runtime(FakeSession(FakeResponse(["nope"])))
+
+        with pytest.raises(m.ProviderError, match="invalid response"):
+            m.deezer_provider(runtime, "a", "b", make_config(["deezer"]))
+
+    def test_deezer_data_not_a_list(self):
+        runtime = make_runtime(FakeSession(FakeResponse({"data": {}})))
+
+        with pytest.raises(m.ProviderError, match="invalid response"):
+            m.deezer_provider(runtime, "a", "b", make_config(["deezer"]))
+
+    def test_deezer_skips_malformed_items(self):
+        session = FakeSession(
+            FakeResponse({"data": ["nope", {"noTitle": 1}]})
+        )
+
+        candidates = m.deezer_provider(
+            make_runtime(session), "a", "b", make_config(["deezer"])
+        )
+
+        assert candidates == []
+
+    def test_musicbrainz_invalid_response(self):
+        runtime = make_runtime(FakeSession(FakeResponse({"unexpected": 1})))
+
+        with pytest.raises(m.ProviderError, match="invalid response"):
+            m.musicbrainz_provider(
+                runtime, "a", "b", make_config(["musicbrainz"])
+            )
+
+    def test_musicbrainz_skips_malformed_items(self):
+        session = FakeSession(
+            FakeResponse({"recordings": ["nope", {"id": "x"}]})
+        )
+
+        candidates = m.musicbrainz_provider(
+            make_runtime(session), "a", "b", make_config(["musicbrainz"])
+        )
+
+        assert candidates == []
+
+    def test_musicbrainz_release_date_from_media(self):
+        session = FakeSession(
+            FakeResponse(
+                {
+                    "recordings": [
+                        {
+                            "id": "rec-1",
+                            "title": "One More Time",
+                            "artist-credit": [{"name": "Daft Punk"}],
+                            "releases": [
+                                {
+                                    "id": "rel-1",
+                                    "title": "Discovery",
+                                    "media": [
+                                        {
+                                            "tracks": [
+                                                {
+                                                    "first-release-date": "2001"
+                                                }
+                                            ]
+                                        }
+                                    ],
+                                }
+                            ],
+                        }
+                    ]
+                }
+            ),
+            FakeResponse(status_code=404),
+        )
+
+        candidates = m.musicbrainz_provider(
+            make_runtime(session), "Daft Punk", "One More Time",
+            make_config(["musicbrainz"]),
+        )
+
+        assert candidates[0]["release_date"] == "2001"
+
+    def test_vocadb_invalid_response(self):
+        runtime = make_runtime(FakeSession(FakeResponse({"unexpected": 1})))
+
+        with pytest.raises(m.ProviderError, match="invalid response"):
+            m.vocadb_provider(runtime, "a", "b", make_config(["vocadb"]))
+
+    def test_vocadb_skips_malformed_items(self):
+        session = FakeSession(
+            FakeResponse({"items": ["nope", {"id": 1}]})
+        )
+
+        candidates = m.vocadb_provider(
+            make_runtime(session), "a", "b", make_config(["vocadb"])
+        )
+
+        assert candidates == []
+
+    def test_vocadb_artist_from_artist_credits(self):
+        session = FakeSession(
+            FakeResponse(
+                {
+                    "items": [
+                        {
+                            "id": 1,
+                            "name": "Song",
+                            "artists": [{"name": "A"}, {"name": "B"}],
+                        }
+                    ]
+                }
+            )
+        )
+
+        candidates = m.vocadb_provider(
+            make_runtime(session), "a", "b", make_config(["vocadb"])
+        )
+
+        assert candidates[0]["artist"] == "A, B"
+
+
+class TestCoverArtArchiveBranches:
+    def test_missing_release_id_returns_none(self):
+        assert m.cover_art_archive_url(
+            make_runtime(), None, make_config(["musicbrainz"])
+        ) is None
+
+    def test_auth_error_is_cached_as_none(self):
+        runtime = make_runtime(FakeSession(FakeResponse(status_code=401)))
+
+        assert m.cover_art_archive_url(
+            runtime, "rel-1", make_config(["musicbrainz"])
+        ) is None
+        assert runtime.cover_art_cache["rel-1"] is None
+
+    def test_missing_cover_is_cached_as_none(self):
+        runtime = make_runtime(FakeSession(FakeResponse(status_code=404)))
+
+        assert m.cover_art_archive_url(
+            runtime, "rel-2", make_config(["musicbrainz"])
+        ) is None
+        assert runtime.cover_art_cache["rel-2"] is None
+
+    def test_images_not_a_list_returns_none(self):
+        runtime = make_runtime(FakeSession(FakeResponse({"images": "x"})))
+
+        assert m.cover_art_archive_url(
+            runtime, "rel-3", make_config(["musicbrainz"])
+        ) is None
+
+    def test_skips_images_without_url_and_picks_largest(self):
+        session = FakeSession(
+            FakeResponse(
+                {
+                    "images": [
+                        {"front": True},
+                        {"front": True, "image": "small", "width": 10, "height": 10},
+                        {"front": True, "image": "big", "width": 100, "height": 100},
+                    ]
+                }
+            )
+        )
+        runtime = make_runtime(session)
+
+        assert m.cover_art_archive_url(
+            runtime, "rel-4", make_config(["musicbrainz"])
+        ) == "big"
+
+
+class TestVocadbUrlHelpers:
+    def test_absolute_vocadb_url_variants(self):
+        assert m.absolute_vocadb_url(None) is None
+        assert m.absolute_vocadb_url("//x/y") == "https://x/y"
+        assert (
+            m.absolute_vocadb_url("/img/a.jpg")
+            == "https://vocadb.net/img/a.jpg"
+        )
+        assert m.absolute_vocadb_url("https://x/y") == "https://x/y"
+
+    def test_picture_url_from_cover_key(self):
+        assert (
+            m.vocadb_picture_url({"coverUrl": "/img/c.jpg"})
+            == "https://vocadb.net/img/c.jpg"
+        )
+
+    def test_picture_url_none_when_absent(self):
+        assert m.vocadb_picture_url("x", "y") is None
+
+
+class TestSpotifyBranches:
+    def test_auth_error_detected_from_message(self):
+        assert m.is_spotify_auth_error(Exception("HTTP 403 Forbidden"))
+        assert not m.is_spotify_auth_error(Exception("boom"))
+
+    def test_init_auth_error(self, monkeypatch):
+        def boom(args):
+            raise RuntimeError("401 unauthorized")
+
+        monkeypatch.setattr(m, "get_spotify", boom)
+
+        with pytest.raises(m.ProviderAuthError):
+            m.spotify_provider(
+                make_runtime(), "a", "b", make_config(["spotify"])
+            )
+
+    def test_init_error(self, monkeypatch):
+        def boom(args):
+            raise RuntimeError("boom")
+
+        monkeypatch.setattr(m, "get_spotify", boom)
+
+        with pytest.raises(m.ProviderError, match="authentication error"):
+            m.spotify_provider(
+                make_runtime(), "a", "b", make_config(["spotify"])
+            )
+
+    def test_search_auth_error(self, monkeypatch):
+        def boom(*args, **kwargs):
+            raise RuntimeError("403")
+
+        monkeypatch.setattr(m, "find_spotify_track", boom)
+        runtime = make_runtime()
+        runtime.spotify_client = object()
+        runtime.spotify_initialized = True
+
+        with pytest.raises(m.ProviderAuthError):
+            m.spotify_provider(runtime, "a", "b", make_config(["spotify"]))
+
+    def test_search_error(self, monkeypatch):
+        def boom(*args, **kwargs):
+            raise RuntimeError("boom")
+
+        monkeypatch.setattr(m, "find_spotify_track", boom)
+        runtime = make_runtime()
+        runtime.spotify_client = object()
+        runtime.spotify_initialized = True
+
+        with pytest.raises(m.ProviderError, match="search error"):
+            m.spotify_provider(runtime, "a", "b", make_config(["spotify"]))
+
+    def test_no_track_returns_empty(self, monkeypatch):
+        monkeypatch.setattr(m, "find_spotify_track", lambda *a, **k: None)
+        runtime = make_runtime()
+        runtime.spotify_client = object()
+        runtime.spotify_initialized = True
+
+        assert m.spotify_provider(
+            runtime, "a", "b", make_config(["spotify"])
+        ) == []
+
+
+class TestCacheBranches:
+    def test_non_dict_json_is_handled(self, tmp_path):
+        path = tmp_path / m.CACHE_FILENAME
+        path.write_text("[]", encoding="utf-8")
+
+        assert m.MetadataCache(path).entries == {}
+
+    def test_save_oserror_is_ignored(self, monkeypatch, tmp_path):
+        cache = m.MetadataCache(tmp_path / m.CACHE_FILENAME)
+
+        def boom(self, *args, **kwargs):
+            raise OSError("nope")
+
+        monkeypatch.setattr(m.Path, "write_text", boom)
+
+        assert cache.set("A", "B", "itunes", {"title": "B"}) is True
+
+    def test_unparsable_score_does_not_block_update(self, tmp_path):
+        cache = m.MetadataCache(tmp_path / m.CACHE_FILENAME)
+        cache.set("A", "B", "itunes", {"title": "B", "score": "n/a"})
+
+        assert cache.set(
+            "A", "B", "itunes", {"title": "B", "score": 0.5}
+        ) is True
+        assert cache.get("A", "B", "itunes")["score"] == 0.5
+
+
+class TestProcessSongDefaults:
+    def test_builds_default_config_when_only_runtime_is_given(
+        self, monkeypatch, tmp_path
+    ):
+        monkeypatch.setattr(
+            m,
+            "resolve_metadata",
+            lambda artist, title, config, runtime: m.fallback_metadata(
+                artist, title
+            ),
+        )
+        monkeypatch.setattr(m, "find_youtube_video", lambda a, t: None)
+
+        ok, reason = m.process_song(
+            None,
+            "A",
+            "B",
+            tmp_path,
+            False,
+            "m4a",
+            source_config=None,
+            runtime=make_runtime(),
+        )
+
+        assert (ok, reason) == (False, "no YouTube result")
+
+
+class TestConfigPathErrors:
+    def test_config_path_that_is_a_directory_raises(self, tmp_path):
+        with pytest.raises(FileNotFoundError, match="not a file"):
+            m.load_config(tmp_path)

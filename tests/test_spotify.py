@@ -1,4 +1,3 @@
-import pytest
 from conftest import FakeSpotify, make_track
 
 import trackfetch as m
