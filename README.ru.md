@@ -211,7 +211,7 @@ trackfetch songs.txt --format opus                # оригинальный з�
 trackfetch "Daft Punk - One More Time"             # один трек, файл не нужен
 trackfetch "A - B" "C - D" --track "E - F"         # несколько треков за раз
 trackfetch big-list.txt -s deezer,itunes,musicbrainz
-trackfetch big-list.txt --disable-sources youtube  # без метаданных и без загрузки
+trackfetch big-list.txt --disable-sources spotify  # явно пропустить Spotify
 trackfetch --list-sources
 ```
 
@@ -243,7 +243,9 @@ trackfetch songs.txt --match-threshold 0.7 --title-threshold 0.85
 
 Для CJK-названий и явных подсказок Vocaloid VocaDB временно поднимается в
 приоритете только для этого поиска. Настроенный порядок не меняется. YouTube
-остаётся включённым, пока его явно не отключить, даже при `-s none`.
+остаётся включённым, пока его явно не отключить, даже при `-s none`. Отключение
+YouTube также отключает загрузку звука, потому что YouTube — единственный
+источник аудио.
 
 Сбои источников обрабатываются внутри: после двух настоящих ошибок подряд
 (таймаут, ошибка сервера и т. п.) источник уходит в паузу на 30 секунд. Каждая

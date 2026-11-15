@@ -28,7 +28,7 @@
 
 `trackfetch {{path/to/songs.txt}} {{[-s|--metadata-sources]}} {{deezer,itunes,musicbrainz,vocadb}}`
 
-- Disable YouTube artwork fallback or any other source:
+- Disable a source (disabling YouTube also disables audio downloads):
 
 `trackfetch {{path/to/songs.txt}} --disable-sources {{youtube}}`
 

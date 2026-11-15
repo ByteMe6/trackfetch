@@ -211,7 +211,7 @@ trackfetch songs.txt --format opus                # original YouTube audio, no r
 trackfetch "Daft Punk - One More Time"             # one track, no file needed
 trackfetch "A - B" "C - D" --track "E - F"         # a few tracks in one go
 trackfetch big-list.txt -s deezer,itunes,musicbrainz
-trackfetch big-list.txt --disable-sources youtube  # metadata only, download will fail
+trackfetch big-list.txt --disable-sources spotify  # skip Spotify explicitly
 trackfetch --list-sources
 ```
 
@@ -243,7 +243,8 @@ trackfetch songs.txt --match-threshold 0.7 --title-threshold 0.85
 
 CJK titles and recognizable Vocaloid hints temporarily promote VocaDB for that
 lookup. The configured order is not changed. YouTube remains enabled unless it
-is explicitly disabled, even with `-s none`.
+is explicitly disabled, even with `-s none`. Disabling YouTube also disables
+the audio download, because YouTube is the only audio source.
 
 Provider failures are handled internally: after two consecutive real failures
 (for example a timeout or an HTTP server error) the provider cools down for
