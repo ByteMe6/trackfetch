@@ -40,6 +40,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - An input file with no usable songs now says `No songs to download` instead of ending silently with an empty summary.
 - The `Already completed` count now says that it comes from `done.txt`.
 
+## [2.2.7] - 2026-11-15
+
+### Added
+- `--no-logs` option and the `no_logs` config key: trackfetch stops reading `done.txt` and stops writing `done.txt` and `failed.txt`. Progress from earlier runs is not restored while this mode is on.
+
 ## [2.2.6] - 2026-11-10
 
 ### Added
@@ -101,7 +106,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - PyInstaller spec, plus prebuilt binaries for Linux, macOS and Windows on x86_64 and ARM64.
 - Automated releases: pushing a new version to `master` builds and publishes all binaries.
 
-[Unreleased]: https://github.com/ByteMe6/trackfetch/compare/v2.1.0...HEAD
+[Unreleased]: https://github.com/ByteMe6/trackfetch/compare/v2.2.7...HEAD
+[2.2.7]: https://github.com/ByteMe6/trackfetch/releases/tag/v2.2.7
+[2.2.6]: https://github.com/ByteMe6/trackfetch/releases/tag/v2.2.6
+[2.2.5]: https://github.com/ByteMe6/trackfetch/releases/tag/v2.2.5
+[2.2.0]: https://github.com/ByteMe6/trackfetch/releases/tag/v2.2.0
 [2.1.0]: https://github.com/ByteMe6/trackfetch/releases/tag/v2.1.0
 [2.0.0]: https://github.com/ByteMe6/trackfetch/releases/tag/v2.0.0
 [1.0.0]: https://github.com/ByteMe6/trackfetch/releases/tag/v1.0.0

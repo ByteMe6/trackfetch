@@ -198,6 +198,86 @@ class TestMain:
         assert "SKIP: already completed" in log
         assert pipeline["searched"] == [("Bad", "Song")]
 
+    def test_logs_are_written_without_no_logs(self, pipeline, monkeypatch, tmp_path):
+        songs = tmp_path / "songs.txt"
+        songs.write_text("Daft Punk - One More Time\nBad - Song\n", encoding="utf-8")
+        out = tmp_path / "o"
+
+        def video_for(artist, title):
+            return None if artist == "Bad" else pipeline["video"]
+
+        def spotify_for(sp, artist, title):
+            return None if artist == "Bad" else pipeline["track"]
+
+        monkeypatch.setattr(m, "find_youtube_video", video_for)
+        monkeypatch.setattr(m, "find_spotify_track", spotify_for)
+
+        run_cli(monkeypatch, songs, "-o", out, "--delay", "0")
+
+        assert m.read_done(out / "done.txt") == {"Daft Punk - One More Time"}
+        assert (out / "failed.txt").read_text(
+            encoding="utf-8"
+        ) == "Bad - Song | no YouTube result\n"
+
+    def test_no_logs_does_not_read_logs(self, pipeline, monkeypatch, tmp_path):
+        songs = tmp_path / "songs.txt"
+        songs.write_text("Daft Punk - One More Time\n", encoding="utf-8")
+        out = tmp_path / "o"
+        out.mkdir()
+        done = out / "done.txt"
+        done.write_text("Daft Punk - One More Time\n", encoding="utf-8")
+
+        run_cli(monkeypatch, songs, "-o", out, "--no-logs", "--delay", "0")
+
+        assert (out / "Daft Punk - One More Time.m4a").exists()
+        assert pipeline["downloaded_urls"] == ["https://www.youtube.com/watch?v=abc"]
+        assert done.read_text(encoding="utf-8") == "Daft Punk - One More Time\n"
+
+    def test_no_logs_does_not_write_logs(self, pipeline, monkeypatch, tmp_path, capsys):
+        songs = tmp_path / "songs.txt"
+        songs.write_text("Daft Punk - One More Time\nBad - Song\n", encoding="utf-8")
+        out = tmp_path / "o"
+        out.mkdir()
+        done = out / "done.txt"
+        failed = out / "failed.txt"
+        done.write_text("Old - Song\n", encoding="utf-8")
+        failed.write_text("Bad - Song | old reason\n", encoding="utf-8")
+
+        def video_for(artist, title):
+            return None if artist == "Bad" else pipeline["video"]
+
+        def spotify_for(sp, artist, title):
+            return None if artist == "Bad" else pipeline["track"]
+
+        monkeypatch.setattr(m, "find_youtube_video", video_for)
+        monkeypatch.setattr(m, "find_spotify_track", spotify_for)
+
+        run_cli(monkeypatch, songs, "-o", out, "--no-logs", "--delay", "0")
+        log = capsys.readouterr().out
+
+        assert (out / "Daft Punk - One More Time.m4a").exists()
+        assert done.read_text(encoding="utf-8") == "Old - Song\n"
+        assert failed.read_text(encoding="utf-8") == "Bad - Song | old reason\n"
+        assert "DONE FILE" not in log
+        assert "FAILED FILE" not in log
+
+    def test_no_logs_still_removes_duplicates(self, pipeline, monkeypatch, tmp_path, capsys):
+        songs = tmp_path / "songs.txt"
+        songs.write_text(
+            "Daft Punk - One More Time\nDaft Punk - One More Time\n",
+            encoding="utf-8",
+        )
+        out = tmp_path / "o"
+
+        run_cli(monkeypatch, songs, "-o", out, "--no-logs", "--delay", "0")
+        log = capsys.readouterr().out
+
+        assert "Removed 1 duplicate(s)" in log
+        assert "SUCCESS: 1" in log
+        assert pipeline["downloaded_urls"] == ["https://www.youtube.com/watch?v=abc"]
+        assert not (out / "done.txt").exists()
+        assert not (out / "failed.txt").exists()
+
     def test_delay_between_songs_only(self, pipeline, monkeypatch, tmp_path):
         songs = tmp_path / "songs.txt"
         songs.write_text("A - 1\nA - 2\nA - 3\n", encoding="utf-8")

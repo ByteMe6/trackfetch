@@ -182,7 +182,7 @@ trackfetch "My Playlist.txt" -o ~/Music/"My Playlist"
 ## Використання
 
 ```text
-trackfetch [-h] [--track ARTIST - TITLE ...] [-o OUTPUT] [--config CONFIG] [-f {mp3,m4a,opus}] [--title-only] [--delay DELAY] [-s SOURCES] [--disable-sources SOURCES] [--provider-opt NAME.KEY=VALUE] [--match-threshold SCORE] [--title-threshold SCORE] [--list-sources] [--spotify-client-id ID] [--spotify-client-secret SECRET] [INPUT ...]
+trackfetch [-h] [--track ARTIST - TITLE ...] [-o OUTPUT] [--config CONFIG] [-f {mp3,m4a,opus}] [--title-only] [--delay DELAY] [-s SOURCES] [--disable-sources SOURCES] [--provider-opt NAME.KEY=VALUE] [--match-threshold SCORE] [--title-threshold SCORE] [--list-sources] [--spotify-client-id ID] [--spotify-client-secret SECRET] [--no-logs] [INPUT ...]
 ```
 
 | Параметр | За замовчуванням | Що робить |
@@ -202,6 +202,7 @@ trackfetch [-h] [--track ARTIST - TITLE ...] [-o OUTPUT] [--config CONFIG] [-f {
 | `--list-sources` | — | Показати доступні джерела й запасні варіанти обкладинок і вийти. Мережа не використовується. |
 | `--spotify-client-id` | `$SPOTIFY_CLIENT_ID` | Client ID для Spotify API. Див. [Дані Spotify](#дані-spotify). |
 | `--spotify-client-secret` | `$SPOTIFY_CLIENT_SECRET` | Client secret для Spotify API. |
+| `--no-logs` | вимкнено | Не читати `done.txt` і не писати `done.txt` та `failed.txt`. Прогрес минулих запусків не враховується, тому готові пісні не пропускаються. |
 
 ```bash
 trackfetch songs.txt -o ~/Music/RoadTrip          # зберегти в конкретну теку
@@ -305,6 +306,7 @@ disable_sources = spotify
 spotify_enabled = false
 spotify_client_id = твій-client-id
 spotify_client_secret = твій-client-secret
+no_logs = false
 
 itunes_enabled = true
 itunes_country = us
@@ -415,6 +417,11 @@ trackfetch retry.txt
 ```
 
 **Завантажити пісню заново:** видали її MP3 і її рядок у `done.txt`.
+
+За `--no-logs` trackfetch не читає `done.txt` і не пише `done.txt` чи
+`failed.txt`. Тому прогрес між запусками не відновлюється: пісні, готові в
+минулому запуску, завантажуються знову, а файл із помилками не створюється й не
+оновлюється. `failed.txt` — журнал лише для запису в будь-якому режимі.
 
 ### Шпаргалка
 
