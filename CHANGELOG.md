@@ -25,6 +25,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - `brew install trackfetch` no longer compiles `ffmpeg` on macOS: the formula installs a static prebuilt `ffmpeg` next to the prebuilt binary, so the first install takes seconds even where Homebrew has no bottle for it.
 
 ### Fixed
+- A CLI metadata selection now overrides conflicting `disable_sources` and `*_enabled=false` configuration, while an explicit CLI disable still wins over a CLI selection. The config file is never rewritten.
+- `match_threshold` and `title_threshold` values outside `0.0`-`1.0`, NaN and infinities are now rejected instead of being silently clamped.
+- Provider `min_interval` values that are NaN, infinite or negative are rejected consistently from the CLI, the config file and `--provider-opt`.
+- Downloaded artwork is identified by its actual signature, so PNG, GIF and WebP files get the correct extension and MIME type instead of always being labelled JPEG. M4A skips GIF/WebP artwork rather than mislabelling it.
+- An incomplete metadata result can no longer overwrite a usable entry in `metadata-cache.json`.
 - A negative `--delay` now gives a clear error instead of a Python traceback.
 - A UTF-8 BOM in the input file no longer ends up in the artist, the title and the file name.
 - Duplicate tracks are removed before downloading, so they are not counted twice and `done.txt` stays clean.

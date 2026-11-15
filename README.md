@@ -194,11 +194,11 @@ trackfetch [-h] [--track ARTIST - TITLE ...] [-o OUTPUT] [--config CONFIG] [-f {
 | `-f`, `--format` | `m4a` | Audio format: `mp3`, `m4a` or `opus`. See [Audio formats](#audio-formats). |
 | `--title-only` | off | Name files `Title.m4a` instead of `Artist - Title.m4a` |
 | `--delay` | `1.0` | Seconds to wait between songs. Raise it for long lists. |
-| `-s`, `--metadata-sources` | `itunes` | Comma-separated metadata priority, for example `deezer,itunes,musicbrainz`. `none` disables metadata lookups but keeps YouTube. |
-| `--disable-sources` | — | Comma-separated sources to disable, for example `spotify,youtube`. |
+| `-s`, `--metadata-sources` | `itunes` | Comma-separated metadata priority, for example `deezer,itunes,musicbrainz`. `none` disables metadata lookups but keeps YouTube. A CLI selection overrides configured disabling for the selected providers. |
+| `--disable-sources` | — | Comma-separated sources to disable, for example `spotify,youtube`. Takes precedence over a CLI metadata selection for the same provider. |
 | `--provider-opt` | — | Provider setting as `NAME.KEY=VALUE`, for example `itunes.country=ua`. Can be repeated. |
-| `--match-threshold` | `0.6` | Minimum overall match score, from `0.0` to `1.0`. |
-| `--title-threshold` | `0.8` | Minimum title similarity, from `0.0` to `1.0`. |
+| `--match-threshold` | `0.6` | Minimum overall match score, from `0.0` to `1.0`. Values outside that range, NaN and infinities are rejected. |
+| `--title-threshold` | `0.8` | Minimum title similarity, from `0.0` to `1.0`. Values outside that range, NaN and infinities are rejected. |
 | `--list-sources` | — | Show available metadata providers and artwork fallbacks, then exit. Makes no network requests. |
 | `--spotify-client-id` | `$SPOTIFY_CLIENT_ID` | Spotify API client ID. See [Spotify credentials](#spotify-credentials). |
 | `--spotify-client-secret` | `$SPOTIFY_CLIENT_SECRET` | Spotify API client secret. |
@@ -231,7 +231,11 @@ fallback. The other providers are off unless you select or enable them:
 
 The order in `-s` is the lookup priority. If the first provider has no suitable
 match, trackfetch tries the next one. The first result that passes both
-matching thresholds wins.
+matching thresholds wins. Command-line choices override the config file for
+that run: `-s deezer` enables Deezer even if the config disables it, while
+`--disable-sources deezer` still disables it. Both thresholds must be finite
+numbers from `0.0` to `1.0`; invalid values stop with an error instead of being
+silently clamped.
 
 ```bash
 trackfetch songs.txt -s deezer,itunes,musicbrainz,vocadb
@@ -256,6 +260,12 @@ when it recovers.
 Metadata is cached per provider in `metadata-cache.json` in the output
 directory. A lower-priority cached result never prevents a higher-priority
 provider from being retried after recovery.
+
+Artwork is identified by its actual bytes, not by the URL or the HTTP
+`Content-Type` header. JPEG, PNG, GIF and WebP keep their real extension and
+MIME type. MP3 and Opus can embed all four; M4A supports JPEG and PNG, so GIF or
+WebP artwork is skipped for that container instead of being mislabelled as
+JPEG.
 
 ### Inline tracks
 
@@ -323,6 +333,12 @@ precedence is always the same:
 1. the command-line flag,
 2. the config file,
 3. the built-in default (the current directory for the output folder).
+
+For source selection, a CLI `-s` list overrides both `metadata_sources` and
+conflicting `disable_sources`/`*_enabled=false` entries for the providers it
+names. An explicit CLI disable from `--disable-sources` or
+`--provider-opt NAME.enabled=false` wins over a CLI selection. The config file
+itself is never rewritten.
 
 trackfetch looks for the config file in this order: the path given with
 `--config`, the path in `$TRACKFETCH_CONFIG`, `trackfetch.ini` in the current

@@ -24,13 +24,21 @@
 
 `trackfetch {{path/to/songs.txt}} --title-only`
 
-- Use a custom metadata priority:
+- Use a custom metadata priority (a CLI selection overrides configured disabling):
 
 `trackfetch {{path/to/songs.txt}} {{[-s|--metadata-sources]}} {{deezer,itunes,musicbrainz,vocadb}}`
+
+- Use no metadata providers but keep YouTube audio:
+
+`trackfetch {{path/to/songs.txt}} {{[-s|--metadata-sources]}} none`
 
 - Disable a source (disabling YouTube also disables audio downloads):
 
 `trackfetch {{path/to/songs.txt}} --disable-sources {{youtube}}`
+
+- Require a stricter match; both thresholds accept only finite values from 0.0 to 1.0:
+
+`trackfetch {{path/to/songs.txt}} --match-threshold {{0.7}} --title-threshold {{0.85}}`
 
 - List the available metadata providers and artwork fallbacks:
 
