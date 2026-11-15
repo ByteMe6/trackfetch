@@ -79,7 +79,9 @@ PROVIDER_DEFAULTS = {
     },
     "itunes": {
         "enabled": True,
-        "min_interval": 3.0,
+        # The Search API allows about 20 calls per minute; 3.5 s keeps a
+        # small margin below that ceiling.
+        "min_interval": 3.5,
         "country": "us",
     },
     "deezer": {

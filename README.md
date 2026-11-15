@@ -224,7 +224,7 @@ fallback. The other providers are off unless you select or enable them:
 
 | Source | Credentials | Minimum interval | Notes |
 | --- | --- | --- | --- |
-| `itunes` | none | 3.0 s | Storefront country defaults to `us` |
+| `itunes` | none | 3.5 s | Storefront country defaults to `us`. About 20 Search API calls per minute are allowed, so the interval keeps a small margin below that ceiling. |
 | `deezer` | none | 0.25 s | Public search |
 | `musicbrainz` | none | 1.1 s | Cover art comes from the Cover Art Archive |
 | `vocadb` | none | 0.5 s | Japanese, Chinese, Korean and Vocaloid metadata |
@@ -308,7 +308,7 @@ no_logs = false
 
 itunes_enabled = true
 itunes_country = us
-itunes_min_interval = 3.0
+itunes_min_interval = 3.5
 
 deezer_enabled = true
 deezer_min_interval = 0.25

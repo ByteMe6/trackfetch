@@ -224,7 +224,7 @@ trackfetch --list-sources
 
 | Джерело | Ключі | Мінімальний інтервал | Примітки |
 | --- | --- | --- | --- |
-| `itunes` | не потрібні | 3.0 с | Країна магазину за замовчуванням `us` |
+| `itunes` | не потрібні | 3.5 с | Країна магазину за замовчуванням `us`. Search API дозволяє близько 20 запитів на хвилину, тож інтервал лишає невеликий запас |
 | `deezer` | не потрібні | 0.25 с | Публічний пошук |
 | `musicbrainz` | не потрібні | 1.1 с | Обкладинки з Cover Art Archive |
 | `vocadb` | не потрібні | 0.5 с | Японські, китайські, корейські та Vocaloid-метадані |
@@ -310,7 +310,7 @@ no_logs = false
 
 itunes_enabled = true
 itunes_country = us
-itunes_min_interval = 3.0
+itunes_min_interval = 3.5
 
 deezer_enabled = true
 deezer_min_interval = 0.25

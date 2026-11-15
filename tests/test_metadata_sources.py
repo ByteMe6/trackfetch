@@ -1030,6 +1030,69 @@ class TestRateLimiting:
         assert sleeps == []
 
 
+class TestRateLimitPolicy:
+    def test_itunes_default_interval_keeps_below_twenty_per_minute(self):
+        interval = m.PROVIDER_DEFAULTS["itunes"]["min_interval"]
+
+        assert interval == 3.5
+        # The Search API allows about 20 calls per minute; 20 * interval
+        # must cover a full minute.
+        assert interval * 20 >= 60
+
+    def test_itunes_default_interval_is_enforced(self, monkeypatch):
+        now = [0.0]
+        sleeps = []
+
+        def fake_sleep(seconds):
+            sleeps.append(seconds)
+            now[0] += seconds
+
+        monkeypatch.setattr(m.time, "sleep", fake_sleep)
+        limiter = m.RateLimiter(
+            {"itunes": m.PROVIDER_DEFAULTS["itunes"]["min_interval"]},
+            clock=lambda: now[0],
+        )
+
+        limiter.wait("itunes")
+        limiter.wait("itunes")
+
+        assert sleeps == [pytest.approx(3.5)]
+
+    def test_metadata_request_goes_through_provider_limiter(self, monkeypatch):
+        runtime = make_runtime()
+        waits = []
+        monkeypatch.setattr(runtime.limiter, "wait", waits.append)
+        runtime.session = FakeSession(FakeResponse({"results": []}))
+
+        m.itunes_provider(runtime, "a", "b", make_config(["itunes"]))
+
+        assert waits == ["itunes"]
+
+    def test_youtube_search_is_not_rate_limited(self, monkeypatch):
+        sleeps = []
+        monkeypatch.setattr(m.time, "sleep", sleeps.append)
+
+        class Result:
+            stdout = ""
+
+        monkeypatch.setattr(m.subprocess, "run", lambda *args, **kwargs: Result())
+
+        assert m.youtube_search("query") == []
+        assert sleeps == []
+
+    def test_youtube_download_is_not_rate_limited(self, monkeypatch, tmp_path):
+        sleeps = []
+        monkeypatch.setattr(m.time, "sleep", sleeps.append)
+
+        class Result:
+            returncode = 1
+
+        monkeypatch.setattr(m.subprocess, "run", lambda *args, **kwargs: Result())
+
+        assert m.download_audio("url", tmp_path) is None
+        assert sleeps == []
+
+
 class TestFailureRecovery:
     def test_two_failures_start_thirty_second_cooldown(self):
         now = [0.0]
