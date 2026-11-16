@@ -1,3 +1,4 @@
+import spotipy
 from conftest import FakeSpotify, make_track
 
 import trackfetch as m
@@ -20,7 +21,7 @@ class TestGetSpotify:
     def test_builds_client(self, monkeypatch):
         monkeypatch.setenv("SPOTIFY_CLIENT_ID", "id")
         monkeypatch.setenv("SPOTIFY_CLIENT_SECRET", "secret")
-        assert isinstance(m.get_spotify(), m.spotipy.Spotify)
+        assert isinstance(m.get_spotify(), spotipy.Spotify)
 
 
 class TestFindSpotifyTrack:

@@ -1,6 +1,9 @@
 import argparse
 import json
+import subprocess
 import sys
+import time
+from pathlib import Path
 
 import pytest
 import requests
@@ -988,7 +991,7 @@ class TestRateLimiting:
             sleeps.append(seconds)
             now[0] += seconds
 
-        monkeypatch.setattr(m.time, "sleep", fake_sleep)
+        monkeypatch.setattr(time, "sleep", fake_sleep)
         limiter = m.RateLimiter(
             {"itunes": 3.0, "deezer": 0.25},
             clock=lambda: now[0],
@@ -1011,7 +1014,7 @@ class TestRateLimiting:
             sleeps.append(seconds)
             now[0] += seconds
 
-        monkeypatch.setattr(m.time, "sleep", fake_sleep)
+        monkeypatch.setattr(time, "sleep", fake_sleep)
         limiter = m.RateLimiter({"deezer": 2.0}, clock=lambda: now[0])
 
         limiter.wait("deezer")
@@ -1021,7 +1024,7 @@ class TestRateLimiting:
 
     def test_zero_interval_never_blocks(self, monkeypatch):
         sleeps = []
-        monkeypatch.setattr(m.time, "sleep", sleeps.append)
+        monkeypatch.setattr(time, "sleep", sleeps.append)
         limiter = m.RateLimiter({"vocadb": 0.0})
 
         limiter.wait("vocadb")
@@ -1047,7 +1050,7 @@ class TestRateLimitPolicy:
             sleeps.append(seconds)
             now[0] += seconds
 
-        monkeypatch.setattr(m.time, "sleep", fake_sleep)
+        monkeypatch.setattr(time, "sleep", fake_sleep)
         limiter = m.RateLimiter(
             {"itunes": m.PROVIDER_DEFAULTS["itunes"]["min_interval"]},
             clock=lambda: now[0],
@@ -1070,24 +1073,24 @@ class TestRateLimitPolicy:
 
     def test_youtube_search_is_not_rate_limited(self, monkeypatch):
         sleeps = []
-        monkeypatch.setattr(m.time, "sleep", sleeps.append)
+        monkeypatch.setattr(time, "sleep", sleeps.append)
 
         class Result:
             stdout = ""
 
-        monkeypatch.setattr(m.subprocess, "run", lambda *args, **kwargs: Result())
+        monkeypatch.setattr(subprocess, "run", lambda *args, **kwargs: Result())
 
         assert m.youtube_search("query") == []
         assert sleeps == []
 
     def test_youtube_download_is_not_rate_limited(self, monkeypatch, tmp_path):
         sleeps = []
-        monkeypatch.setattr(m.time, "sleep", sleeps.append)
+        monkeypatch.setattr(time, "sleep", sleeps.append)
 
         class Result:
             returncode = 1
 
-        monkeypatch.setattr(m.subprocess, "run", lambda *args, **kwargs: Result())
+        monkeypatch.setattr(subprocess, "run", lambda *args, **kwargs: Result())
 
         assert m.download_audio("url", tmp_path) is None
         assert sleeps == []
@@ -1420,7 +1423,7 @@ class TestArtwork:
                 pass
 
         monkeypatch.setattr(
-            m.requests,
+            requests,
             "get",
             lambda *a, **k: Response(),
         )
@@ -1445,7 +1448,7 @@ class TestArtwork:
         response = Response()
         response.content = content
         monkeypatch.setattr(
-            m.requests,
+            requests,
             "get",
             lambda *a, **k: response,
         )
@@ -1476,7 +1479,7 @@ class TestArtwork:
 
         response.raise_for_status = raise_for_status
         monkeypatch.setattr(
-            m.requests,
+            requests,
             "get",
             lambda *a, **k: response,
         )
@@ -1516,7 +1519,7 @@ class TestArtwork:
         def fake_get(url, **kwargs):
             return responses.pop(0)
 
-        monkeypatch.setattr(m.requests, "get", fake_get)
+        monkeypatch.setattr(requests, "get", fake_get)
         metadata = {
             "cover_url": "https://img/cover.jpg",
             "source": "itunes",
@@ -1608,7 +1611,7 @@ class TestYoutubeFallback:
     def test_youtube_disabled_prevents_download(self, monkeypatch, tmp_path):
         calls = []
         monkeypatch.setattr(
-            m,
+            m.pipeline,
             "find_youtube_video",
             lambda artist, title: calls.append((artist, title)),
         )
@@ -1633,7 +1636,7 @@ class TestYoutubeFallback:
     ):
         calls = []
         monkeypatch.setattr(
-            m,
+            m.pipeline,
             "find_youtube_video",
             lambda artist, title: calls.append((artist, title)),
         )
@@ -1661,7 +1664,7 @@ class TestYoutubeFallback:
     ):
         calls = []
         monkeypatch.setattr(
-            m,
+            m.pipeline,
             "find_youtube_video",
             lambda artist, title: calls.append((artist, title)),
         )
@@ -1690,9 +1693,9 @@ class TestYoutubeFallback:
         from conftest import FIXTURES
 
         video = {"title": "A - B", "id": "abc"}
-        monkeypatch.setattr(m, "find_youtube_video", lambda a, t: video)
+        monkeypatch.setattr(m.pipeline, "find_youtube_video", lambda a, t: video)
         monkeypatch.setattr(
-            m,
+            m.pipeline,
             "download_audio",
             lambda url, temp_dir, fmt: shutil.copy(
                 FIXTURES / f"silence.{fmt}",
@@ -1700,7 +1703,7 @@ class TestYoutubeFallback:
             ),
         )
         monkeypatch.setattr(
-            m,
+            m.images,
             "download_cover",
             lambda url, dest: dest.write_bytes(b"\xff\xd8\xff\xe0jpeg"),
         )
@@ -1987,7 +1990,7 @@ class TestSpotifyBranches:
         def boom(args):
             raise RuntimeError("401 unauthorized")
 
-        monkeypatch.setattr(m, "get_spotify", boom)
+        monkeypatch.setattr(m.providers.spotify, "get_spotify", boom)
 
         with pytest.raises(m.ProviderAuthError):
             m.spotify_provider(
@@ -1998,7 +2001,7 @@ class TestSpotifyBranches:
         def boom(args):
             raise RuntimeError("boom")
 
-        monkeypatch.setattr(m, "get_spotify", boom)
+        monkeypatch.setattr(m.providers.spotify, "get_spotify", boom)
 
         with pytest.raises(m.ProviderError, match="authentication error"):
             m.spotify_provider(
@@ -2009,7 +2012,7 @@ class TestSpotifyBranches:
         def boom(*args, **kwargs):
             raise RuntimeError("403")
 
-        monkeypatch.setattr(m, "find_spotify_track", boom)
+        monkeypatch.setattr(m.providers.spotify, "find_spotify_track", boom)
         runtime = make_runtime()
         runtime.spotify_client = object()
         runtime.spotify_initialized = True
@@ -2021,7 +2024,7 @@ class TestSpotifyBranches:
         def boom(*args, **kwargs):
             raise RuntimeError("boom")
 
-        monkeypatch.setattr(m, "find_spotify_track", boom)
+        monkeypatch.setattr(m.providers.spotify, "find_spotify_track", boom)
         runtime = make_runtime()
         runtime.spotify_client = object()
         runtime.spotify_initialized = True
@@ -2030,7 +2033,7 @@ class TestSpotifyBranches:
             m.spotify_provider(runtime, "a", "b", make_config(["spotify"]))
 
     def test_no_track_returns_empty(self, monkeypatch):
-        monkeypatch.setattr(m, "find_spotify_track", lambda *a, **k: None)
+        monkeypatch.setattr(m.providers.spotify, "find_spotify_track", lambda *a, **k: None)
         runtime = make_runtime()
         runtime.spotify_client = object()
         runtime.spotify_initialized = True
@@ -2053,7 +2056,7 @@ class TestCacheBranches:
         def boom(self, *args, **kwargs):
             raise OSError("nope")
 
-        monkeypatch.setattr(m.Path, "write_text", boom)
+        monkeypatch.setattr(Path, "write_text", boom)
 
         assert cache.set("A", "B", "itunes", {"title": "B"}) is True
 
@@ -2072,13 +2075,13 @@ class TestProcessSongDefaults:
         self, monkeypatch, tmp_path
     ):
         monkeypatch.setattr(
-            m,
+            m.pipeline,
             "resolve_metadata",
             lambda artist, title, config, runtime: m.fallback_metadata(
                 artist, title
             ),
         )
-        monkeypatch.setattr(m, "find_youtube_video", lambda a, t: None)
+        monkeypatch.setattr(m.pipeline, "find_youtube_video", lambda a, t: None)
 
         ok, reason = m.process_song(
             None,

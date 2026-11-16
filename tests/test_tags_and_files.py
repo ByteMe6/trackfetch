@@ -2,6 +2,7 @@ import base64
 import shutil
 
 import pytest
+import requests
 from conftest import FIXTURES
 from mutagen.flac import Picture
 from mutagen.id3 import ID3, TIT2
@@ -179,7 +180,7 @@ class TestDownloadCover:
             seen.update(url=url, timeout=timeout)
             return Response()
 
-        monkeypatch.setattr(m.requests, "get", fake_get)
+        monkeypatch.setattr(requests, "get", fake_get)
         dest = tmp_path / "cover.jpg"
         m.download_cover("https://img/x.jpg", dest)
         assert dest.read_bytes() == JPEG
@@ -188,10 +189,10 @@ class TestDownloadCover:
     def test_raises_on_http_error(self, monkeypatch, tmp_path):
         class Response:
             def raise_for_status(self):
-                raise m.requests.HTTPError("404")
+                raise requests.HTTPError("404")
 
-        monkeypatch.setattr(m.requests, "get", lambda *a, **k: Response())
-        with pytest.raises(m.requests.HTTPError):
+        monkeypatch.setattr(requests, "get", lambda *a, **k: Response())
+        with pytest.raises(requests.HTTPError):
             m.download_cover("u", tmp_path / "c.jpg")
 
 
