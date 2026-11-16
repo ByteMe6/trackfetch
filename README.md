@@ -182,7 +182,7 @@ trackfetch "My Playlist.txt" -o ~/Music/"My Playlist"
 ## Usage
 
 ```text
-trackfetch [-h] [--track ARTIST - TITLE ...] [-o OUTPUT] [--config CONFIG] [-f {mp3,m4a,opus}] [--title-only] [--delay DELAY] [-s SOURCES] [--disable-sources SOURCES] [--provider-opt NAME.KEY=VALUE] [--match-threshold SCORE] [--title-threshold SCORE] [--list-sources] [--spotify-client-id ID] [--spotify-client-secret SECRET] [--no-logs] [INPUT ...]
+trackfetch [-h] [--track ARTIST - TITLE ...] [-o OUTPUT] [--config CONFIG] [-f {mp3,m4a,opus}] [--title-only] [--delay DELAY] [-s SOURCES] [--disable-sources SOURCES] [--provider-opt NAME.KEY=VALUE] [--match-threshold SCORE] [--title-threshold SCORE] [--list-sources] [--spotify-client-id ID] [--spotify-client-secret SECRET] [--no-logs] [--lyrics | --no-lyrics] [INPUT ...]
 ```
 
 | Option | Default | What it does |
@@ -203,6 +203,7 @@ trackfetch [-h] [--track ARTIST - TITLE ...] [-o OUTPUT] [--config CONFIG] [-f {
 | `--spotify-client-id` | `$SPOTIFY_CLIENT_ID` | Spotify API client ID. See [Spotify credentials](#spotify-credentials). |
 | `--spotify-client-secret` | `$SPOTIFY_CLIENT_SECRET` | Spotify API client secret. |
 | `--no-logs` | off | Do not read `done.txt` and do not write `done.txt` or `failed.txt`. Progress from earlier runs is ignored, so finished songs are not skipped. |
+| `--lyrics` / `--no-lyrics` | on | Embed lyrics fetched from LRCLIB into MP3 tags. Plain text goes to `USLT`; timed lyrics also go to `SYLT`. Missing lyrics never fail the download. |
 
 ```bash
 trackfetch songs.txt -o ~/Music/RoadTrip          # save to a specific folder
@@ -268,6 +269,38 @@ MIME type. MP3 and Opus can embed all four; M4A supports JPEG and PNG, so GIF or
 WebP artwork is skipped for that container instead of being mislabelled as
 JPEG.
 
+### Lyrics
+
+For MP3 output trackfetch also looks up lyrics on [LRCLIB](https://lrclib.net/)
+and embeds them in the ID3 tag, so players can show the words offline without
+sidecar `.lrc` or `.txt` files.
+
+| Frame | Contents |
+| --- | --- |
+| `USLT` | The full plain text, without timestamps. |
+| `SYLT` | Timed lines, only when the source returns synchronized lyrics. |
+
+When timed lyrics are available, both frames are written: `USLT` keeps the
+full text for players without `SYLT` support. When only plain lyrics are
+available, only `USLT` is written. Timestamps are never invented.
+
+The source is LRCLIB, which needs no API key. Lyrics embedding is enabled by
+default for MP3 and can be turned off with `--no-lyrics` or
+`lyrics_enabled = false` in the config file. The other formats (`m4a`, `opus`)
+are not changed by this option.
+
+Missing lyrics, a timeout or an HTTP error never fails the download. The MP3
+is still saved with its usual metadata. If an MP3 already contains lyrics and
+no new lyrics are found, the existing frames are left untouched. When new
+lyrics are found, the old `USLT`/`SYLT` frames are replaced instead of
+duplicated. Existing tags and cover art, and the audio data itself, are never
+rewritten or re-encoded.
+
+```bash
+trackfetch songs.txt --format mp3                 # embed lyrics (default)
+trackfetch songs.txt --format mp3 --no-lyrics     # keep MP3 tags lyrics-free
+```
+
 ### Inline tracks
 
 Skip the file and name the tracks right on the command line:
@@ -321,6 +354,9 @@ vocadb_min_interval = 0.5
 
 # YouTube artwork fallback
 youtube_enabled = true
+
+# Lyrics embedding into MP3 tags
+lyrics_enabled = true
 
 # Matching thresholds
 match_threshold = 0.6
@@ -386,7 +422,7 @@ environment variable.
 | `opus` | YouTube's **original** Opus audio, copied without re-encoding. The best quality you can get | most modern players, Android, browsers; not iTunes or older devices |
 | `mp3` | YouTube's audio **re-encoded** to the best VBR MP3. A second lossy encode, so slightly below the source | everything, including old players and car stereos |
 
-All three get the same tags and embedded cover art. `done.txt` doesn't track the format, so use a separate `-o` folder for each format.
+All three get the same metadata tags and embedded cover art. Embedded lyrics are written to MP3 only. `done.txt` doesn't track the format, so use a separate `-o` folder for each format.
 
 ### Input file
 

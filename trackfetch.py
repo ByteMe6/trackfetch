@@ -23,12 +23,14 @@ from mutagen.flac import Picture
 from mutagen.id3 import (
     APIC,
     ID3,
+    SYLT,
     TALB,
     TDRC,
     TIT2,
     TPE1,
     TPE2,
     TRCK,
+    USLT,
 )
 from mutagen.mp4 import MP4, MP4Cover
 from mutagen.oggopus import OggOpus
@@ -101,6 +103,15 @@ PROVIDER_DEFAULTS = {
 DEFAULT_MATCH_THRESHOLD = 0.6
 DEFAULT_TITLE_THRESHOLD = 0.8
 YOUTUBE_DEFAULT_ENABLED = True
+LYRICS_DEFAULT_ENABLED = True
+LYRICS_LANGUAGE = "und"
+LYRICS_TIMEOUT = 15
+LYRICS_MIN_INTERVAL = 0.5
+LRCLIB_SEARCH_URL = "https://lrclib.net/api/search"
+
+LRC_TIMESTAMP_RE = re.compile(
+    r"\[(\d{1,3}):(\d{2})(?:[.:](\d{1,3}))?\]"
+)
 
 CACHE_FILENAME = "metadata-cache.json"
 CACHE_VERSION = 1
@@ -264,6 +275,7 @@ class SourceConfig:
         match_threshold,
         title_threshold,
         none_selected=False,
+        lyrics_enabled=LYRICS_DEFAULT_ENABLED,
     ):
         self.metadata_sources = list(metadata_sources)
         self.youtube_enabled = bool(youtube_enabled)
@@ -271,6 +283,7 @@ class SourceConfig:
         self.match_threshold = match_threshold
         self.title_threshold = title_threshold
         self.none_selected = bool(none_selected)
+        self.lyrics_enabled = bool(lyrics_enabled)
 
     def interval(self, name: str) -> float:
         return self.providers[name]["min_interval"]
@@ -597,6 +610,19 @@ def build_source_config(args, settings):
     if "youtube" in all_disabled_sources:
         youtube_enabled = False
 
+    lyrics_enabled = LYRICS_DEFAULT_ENABLED
+
+    if "lyrics_enabled" in settings and str(settings["lyrics_enabled"]).strip():
+        lyrics_enabled = parse_bool(
+            settings["lyrics_enabled"],
+            "lyrics_enabled",
+        )
+
+    cli_lyrics = getattr(args, "lyrics_enabled", None)
+
+    if cli_lyrics is not None:
+        lyrics_enabled = bool(cli_lyrics)
+
     match_threshold = threshold_value(
         getattr(args, "match_threshold", None),
         threshold_value(
@@ -623,6 +649,7 @@ def build_source_config(args, settings):
         match_threshold,
         title_threshold,
         none_selected,
+        lyrics_enabled,
     )
 
 
@@ -690,6 +717,12 @@ def format_source_list(config: SourceConfig) -> str:
             f"Metadata priority: {', '.join(config.metadata_sources) or 'none'}",
             f"Match threshold: {config.match_threshold}",
             f"Title threshold: {config.title_threshold}",
+            "Lyrics embedding: "
+            + (
+                "enabled (LRCLIB, MP3 only)"
+                if config.lyrics_enabled
+                else "disabled"
+            ),
         ]
     )
 
@@ -1878,6 +1911,190 @@ def resolve_metadata(artist: str, title: str, config: SourceConfig, runtime):
     return fallback
 
 
+def lrc_fraction_to_ms(fraction: str) -> int:
+    """Convert the fractional part of an LRC timestamp to milliseconds."""
+    if not fraction:
+        return 0
+
+    return int(fraction.ljust(3, "0")[:3])
+
+
+def parse_synced_lyrics(text: str):
+    """Parse LRC text into (line, timestamp in milliseconds) pairs."""
+    entries = []
+
+    for line in (text or "").splitlines():
+        timestamps = LRC_TIMESTAMP_RE.findall(line)
+
+        if not timestamps:
+            # LRC metadata such as [ar:Artist] has no timestamp and is skipped.
+            continue
+
+        lyric = LRC_TIMESTAMP_RE.sub("", line).strip()
+
+        if not lyric:
+            continue
+
+        for minutes, seconds, fraction in timestamps:
+            timestamp = (
+                int(minutes) * 60_000
+                + int(seconds) * 1000
+                + lrc_fraction_to_ms(fraction)
+            )
+            entries.append((lyric, timestamp))
+
+    entries.sort(key=lambda entry: entry[1])
+
+    return entries
+
+
+def select_lyrics(results, artist: str, title: str):
+    """Choose the best matching lyrics result and normalize its fields."""
+    best = None
+
+    for item in results or []:
+        if not isinstance(item, dict) or item.get("instrumental"):
+            continue
+
+        candidate = {
+            "title": item.get("trackName") or "",
+            "artist": item.get("artistName") or "",
+        }
+        scored = score_metadata(
+            artist,
+            title,
+            candidate,
+            DEFAULT_MATCH_THRESHOLD,
+            DEFAULT_TITLE_THRESHOLD,
+        )
+
+        if scored is None:
+            continue
+
+        plain = (item.get("plainLyrics") or "").strip()
+        synced = (item.get("syncedLyrics") or "").strip()
+        synced_entries = parse_synced_lyrics(synced)
+
+        if not plain and synced_entries:
+            # Some sources only return timed lyrics. USLT still has to hold the
+            # full text, so strip the timestamps without inventing new ones.
+            plain = "\n".join(line for line, _ in synced_entries)
+
+        if not plain and not synced_entries:
+            continue
+
+        lyrics = {
+            "plain": plain or None,
+            "synced": synced or None,
+            "score": scored["score"],
+        }
+
+        if best is None or lyrics["score"] > best["score"]:
+            best = lyrics
+
+    return best
+
+
+def fetch_lyrics(
+    artist: str,
+    title: str,
+    runtime=None,
+    timeout: float = LYRICS_TIMEOUT,
+):
+    """Look up lyrics on LRCLIB, which returns plain and timed lyrics.
+
+    Missing lyrics are a normal result, not an error. Transport and server
+    errors raise ProviderError so the caller can report them without failing
+    the download.
+    """
+    params = {
+        "artist_name": artist,
+        "track_name": title,
+    }
+
+    headers = {"User-Agent": USER_AGENT}
+
+    try:
+        if runtime is not None:
+            runtime.limiter.wait("lrclib")
+            response = runtime.session.get(
+                LRCLIB_SEARCH_URL,
+                params=params,
+                headers=headers,
+                timeout=timeout,
+            )
+        else:
+            response = requests.get(
+                LRCLIB_SEARCH_URL,
+                params=params,
+                headers=headers,
+                timeout=timeout,
+            )
+
+    except requests.RequestException as error:
+        raise ProviderError(f"lyrics request failed: {error}") from error
+
+    status = getattr(response, "status_code", 200)
+
+    if status == 404:
+        return None
+
+    if status >= 400:
+        raise ProviderError(f"lyrics source returned HTTP {status}")
+
+    try:
+        results = response.json()
+
+    except (TypeError, ValueError) as error:
+        raise ProviderError("lyrics source returned invalid JSON") from error
+
+    if isinstance(results, dict):
+        results = results.get("data") or []
+
+    return select_lyrics(results, artist, title)
+
+
+def add_mp3_lyrics(audio, lyrics):
+    """Add or replace USLT/SYLT frames without touching other ID3 tags."""
+    if not lyrics:
+        # No new lyrics is not a reason to delete lyrics that are already there.
+        return
+
+    plain = (lyrics.get("plain") or "").strip()
+    synced_entries = parse_synced_lyrics(lyrics.get("synced") or "")
+
+    if not plain and synced_entries:
+        plain = "\n".join(line for line, _ in synced_entries)
+
+    if not plain and not synced_entries:
+        return
+
+    audio.delall("USLT")
+    audio.delall("SYLT")
+
+    if plain:
+        audio.add(
+            USLT(
+                encoding=3,
+                lang=LYRICS_LANGUAGE,
+                desc="",
+                text=plain,
+            )
+        )
+
+    if synced_entries:
+        audio.add(
+            SYLT(
+                encoding=3,
+                lang=LYRICS_LANGUAGE,
+                format=2,
+                type=1,
+                desc="",
+                text=synced_entries,
+            )
+        )
+
+
 def download_audio(
     video_url: str,
     temp_dir: Path,
@@ -1918,6 +2135,7 @@ def add_metadata(
     audio_path: Path,
     cover_path: Path,
     metadata: dict,
+    lyrics=None,
 ):
     if audio_path.suffix == ".opus":
         add_opus_metadata(
@@ -1936,6 +2154,7 @@ def add_metadata(
             audio_path,
             cover_path,
             metadata,
+            lyrics,
         )
 
 
@@ -1943,6 +2162,7 @@ def add_mp3_metadata(
     mp3_path: Path,
     cover_path: Path,
     metadata: dict,
+    lyrics=None,
 ):
     try:
         audio = ID3(mp3_path)
@@ -2020,6 +2240,8 @@ def add_mp3_metadata(
                     data=image_data,
                 )
             )
+
+    add_mp3_lyrics(audio, lyrics)
 
     audio.save(
         mp3_path,
@@ -2309,11 +2531,40 @@ def process_song(
         if cover_path is None:
             cover_path = temp_dir / "cover.jpg"
 
+        lyrics = None
+        lyrics_enabled = (
+            LYRICS_DEFAULT_ENABLED
+            if source_config is None
+            else source_config.lyrics_enabled
+        )
+
+        if audio_format == "mp3" and lyrics_enabled:
+            lyrics_error = False
+
+            try:
+                lyrics = fetch_lyrics(
+                    metadata["artist"],
+                    metadata["title"],
+                    runtime,
+                )
+
+            except Exception as error:
+                lyrics_error = True
+                print(f"Lyrics: not found ({error})")
+
+            if lyrics:
+                kinds = "plain + timed" if lyrics.get("synced") else "plain"
+                print(f"Lyrics: embedded ({kinds})")
+
+            elif not lyrics_error:
+                print("Lyrics: not found")
+
         try:
             add_metadata(
                 audio_path,
                 cover_path,
                 metadata,
+                lyrics,
             )
 
         except Exception as error:
@@ -2450,6 +2701,9 @@ def coerce_config_value(action, raw):
 
     if isinstance(action, argparse._StoreTrueAction):
         return raw.lower() in ("1", "true", "yes", "on")
+
+    if isinstance(action, argparse.BooleanOptionalAction):
+        return parse_bool(raw, action.dest)
 
     return raw
 
@@ -2751,6 +3005,17 @@ def main():
         ),
     )
 
+    parser.add_argument(
+        "--lyrics",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        dest="lyrics_enabled",
+        help=(
+            "Embed lyrics from LRCLIB into MP3 tags as USLT and, when "
+            "timed lyrics are available, SYLT (default: on)"
+        ),
+    )
+
     args = parser.parse_args()
 
     try:
@@ -2911,6 +3176,10 @@ def main():
         "YouTube artwork fallback: "
         + ("enabled" if source_config.youtube_enabled else "disabled")
     )
+    print(
+        "Lyrics embedding: "
+        + ("enabled (MP3 only)" if source_config.lyrics_enabled else "disabled")
+    )
 
     sys.stdout.flush()
 
@@ -2921,6 +3190,7 @@ def main():
                 name: source_config.interval(name)
                 for name in METADATA_PROVIDERS
             }
+            | {"lrclib": LYRICS_MIN_INTERVAL}
         ),
         spotify_args=args,
     )

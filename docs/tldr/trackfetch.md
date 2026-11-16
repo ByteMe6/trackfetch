@@ -16,6 +16,14 @@
 
 `trackfetch {{path/to/songs.txt}} {{[-f|--format]}} {{opus|m4a}}`
 
+- Embed lyrics from LRCLIB into MP3 tags (enabled by default):
+
+`trackfetch {{path/to/songs.txt}} {{[-f|--format]}} {{mp3}}`
+
+- Do not embed lyrics into MP3 tags:
+
+`trackfetch {{path/to/songs.txt}} {{[-f|--format]}} {{mp3}} --no-lyrics`
+
 - Download a few tracks without a text file:
 
 `trackfetch {{"Artist - Title"}} {{"Another Artist - Another Title"}}`

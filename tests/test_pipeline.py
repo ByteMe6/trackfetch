@@ -1,3 +1,4 @@
+import argparse
 import shutil
 import sys
 
@@ -60,6 +61,7 @@ def pipeline(monkeypatch):
     monkeypatch.setattr(m, "download_audio", fake_download_audio)
     monkeypatch.setattr(m, "download_cover", fake_download_cover)
     monkeypatch.setattr(m, "get_spotify", lambda *a, **k: object())
+    monkeypatch.setattr(m, "fetch_lyrics", lambda *a, **k: None)
     monkeypatch.setattr(m.time, "sleep", lambda s: None)
     return state
 
@@ -75,6 +77,68 @@ class TestProcessSong:
         assert tags["TALB"].text == ["Discovery"]
         assert tags.getall("APIC")
         assert pipeline["downloaded_urls"] == ["https://www.youtube.com/watch?v=abc"]
+
+    def test_embeds_plain_and_timed_lyrics(self, pipeline, tmp_path, monkeypatch):
+        monkeypatch.setattr(
+            m,
+            "fetch_lyrics",
+            lambda *args, **kwargs: {
+                "plain": "Привет, мир!\nВторая строка",
+                "synced": "[00:01.00]Привет, мир!\n[00:02.00]Вторая строка",
+            },
+        )
+
+        assert m.process_song(
+            None, "a", "b", tmp_path, False
+        ) == (True, "downloaded")
+
+        tags = ID3(tmp_path / "Daft Punk - One More Time.mp3")
+        assert tags.getall("USLT")[0].text == "Привет, мир!\nВторая строка"
+        assert tags.getall("SYLT")[0].text == [
+            ("Привет, мир!", 1000),
+            ("Вторая строка", 2000),
+        ]
+
+    def test_missing_lyrics_does_not_fail_download(
+        self, pipeline, tmp_path, capsys
+    ):
+        assert m.process_song(
+            None, "a", "b", tmp_path, False
+        ) == (True, "downloaded")
+
+        tags = ID3(tmp_path / "Daft Punk - One More Time.mp3")
+        assert not tags.getall("USLT")
+        assert not tags.getall("SYLT")
+        assert "Lyrics: not found" in capsys.readouterr().out
+
+    def test_disabled_lyrics_are_not_fetched(self, pipeline, tmp_path, monkeypatch):
+        def boom(*args, **kwargs):
+            raise AssertionError("lyrics must not be fetched")
+
+        monkeypatch.setattr(m, "fetch_lyrics", boom)
+        config = m.build_source_config(
+            argparse.Namespace(
+                metadata_sources=None,
+                disable_sources=None,
+                provider_opt=None,
+                match_threshold=None,
+                title_threshold=None,
+                lyrics_enabled=False,
+            ),
+            {},
+        )
+
+        assert m.process_song(
+            None,
+            "a",
+            "b",
+            tmp_path,
+            False,
+            "mp3",
+            source_config=config,
+        ) == (True, "downloaded")
+        assert not ID3(tmp_path / "Daft Punk - One More Time.mp3").getall("USLT")
+
 
     def test_opus(self, pipeline, tmp_path):
         assert m.process_song(None, "a", "b", tmp_path, False, "opus") == (True, "downloaded")

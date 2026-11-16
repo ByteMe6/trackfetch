@@ -182,7 +182,7 @@ trackfetch "My Playlist.txt" -o ~/Music/"My Playlist"
 ## Використання
 
 ```text
-trackfetch [-h] [--track ARTIST - TITLE ...] [-o OUTPUT] [--config CONFIG] [-f {mp3,m4a,opus}] [--title-only] [--delay DELAY] [-s SOURCES] [--disable-sources SOURCES] [--provider-opt NAME.KEY=VALUE] [--match-threshold SCORE] [--title-threshold SCORE] [--list-sources] [--spotify-client-id ID] [--spotify-client-secret SECRET] [--no-logs] [INPUT ...]
+trackfetch [-h] [--track ARTIST - TITLE ...] [-o OUTPUT] [--config CONFIG] [-f {mp3,m4a,opus}] [--title-only] [--delay DELAY] [-s SOURCES] [--disable-sources SOURCES] [--provider-opt NAME.KEY=VALUE] [--match-threshold SCORE] [--title-threshold SCORE] [--list-sources] [--spotify-client-id ID] [--spotify-client-secret SECRET] [--no-logs] [--lyrics | --no-lyrics] [INPUT ...]
 ```
 
 | Параметр | За замовчуванням | Що робить |
@@ -203,6 +203,7 @@ trackfetch [-h] [--track ARTIST - TITLE ...] [-o OUTPUT] [--config CONFIG] [-f {
 | `--spotify-client-id` | `$SPOTIFY_CLIENT_ID` | Client ID для Spotify API. Див. [Дані Spotify](#дані-spotify). |
 | `--spotify-client-secret` | `$SPOTIFY_CLIENT_SECRET` | Client secret для Spotify API. |
 | `--no-logs` | вимкнено | Не читати `done.txt` і не писати `done.txt` та `failed.txt`. Прогрес минулих запусків не враховується, тому готові пісні не пропускаються. |
+| `--lyrics` / `--no-lyrics` | увімкнено | Вбудовувати текст із LRCLIB у теги MP3. Звичайний текст пишеться в `USLT`, синхронізований — ще й у `SYLT`. Якщо тексту немає, завантаження не вважається помилкою. |
 
 ```bash
 trackfetch songs.txt -o ~/Music/RoadTrip          # зберегти в конкретну теку
@@ -269,6 +270,37 @@ MIME тип. MP3 і Opus можуть вбудовувати всі чотири
 як JPEG.
 ```
 
+### Текст пісні
+
+Для MP3 trackfetch також шукає текст на [LRCLIB](https://lrclib.net/) і
+вбудовує його в ID3-теги, щоб плеєр показував слова без інтернету та окремих
+файлів `.lrc` чи `.txt`.
+
+| Фрейм | Вміст |
+| --- | --- |
+| `USLT` | Повний звичайний текст без таймкодів. |
+| `SYLT` | Рядки з часовими мітками, лише якщо джерело повернуло синхронізований текст. |
+
+Якщо синхронізований текст є, записуються обидва фрейми: `USLT` потрібен
+плеєрам без підтримки `SYLT`. Якщо є лише звичайний текст, записується тільки
+`USLT`. Штучні таймкоди не створюються.
+
+Джерело — LRCLIB, ключ API не потрібен. За замовчуванням вбудовування
+увімкнено для MP3; вимкнути можна прапорцем `--no-lyrics` або рядком
+`lyrics_enabled = false` у конфігу. На формати `m4a` та `opus` це
+налаштування не впливає.
+
+Якщо текст не знайдено, сталася помилка мережі або сервер повернув помилку,
+завантаження не переривається: MP3 зберігається зі звичайними метаданими. Якщо
+у файлі вже був текст, а новий не знайдено, старі фрейми залишаються. Коли
+знайдено новий текст, попередні `USLT`/`SYLT` замінюються, а не дублюються.
+Інші теги, обкладинка й самі аудіодані не перекодовуються й не пошкоджуються.
+
+```bash
+trackfetch songs.txt --format mp3                 # вбудувати текст (за замовчуванням)
+trackfetch songs.txt --format mp3 --no-lyrics     # не додавати текст у MP3
+```
+
 ### Треки просто в аргументах
 
 Можна не заводити файл, а назвати треки просто в командному рядку:
@@ -323,6 +355,9 @@ vocadb_min_interval = 0.5
 
 # Запасна обкладинка YouTube
 youtube_enabled = true
+
+# Вбудовування тексту пісні в теги MP3
+lyrics_enabled = true
 
 # Пороги збігу
 match_threshold = 0.6
@@ -387,7 +422,7 @@ trackfetch songs.txt --spotify-client-id твій-id --spotify-client-secret т�
 | `opus` | **Оригінальний** звук YouTube в Opus, скопійований без перекодування. Найкраща доступна якість | більшість сучасних плеєрів, Android, браузери; не iTunes і не старі пристрої |
 | `mp3` (за замовчуванням) | Звук YouTube, **перекодований** у MP3 VBR максимальної якості. Це повторне стиснення з втратами, тому трохи гірше за оригінал | усюди, зокрема старі плеєри й автомагнітоли |
 
-У всіх трьох форматах однакові теги й вбудована обкладинка. `done.txt` не враховує формат, тому для кожного формату вказуй окрему теку `-o`.
+У всіх трьох форматах однакові метадані й вбудована обкладинка. Текст пісні вбудовується лише в MP3. `done.txt` не враховує формат, тому для кожного формату вказуй окрему теку `-o`.
 
 ### Вхідний файл
 
