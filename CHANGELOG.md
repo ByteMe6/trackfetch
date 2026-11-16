@@ -21,6 +21,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - Tests for source resolution, configuration, matching, provider responses, rate limiting, failure recovery, caching, artwork and the new CLI options.
 
 ### Changed
+- The single `trackfetch.py` module is now a package split by responsibility: `config`/`settings`, `runtime`, `providers/<name>`, `resolver`, `youtube`, `images`, `lyrics`, `tags`, `files`, `pipeline` and `cli`. The public `import trackfetch` API is unchanged, and `python -m trackfetch` now works as well.
 - The default metadata source is now iTunes, so Spotify credentials are optional and Spotify is disabled unless explicitly selected or enabled.
 - `get_spotify()` now returns `None` quietly when credentials are missing instead of exiting.
 - Metadata results use one normalized structure with source, identifier, artwork and match score.

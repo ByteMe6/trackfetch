@@ -1,0 +1,110 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+"""Static defaults and provider tables shared across TrackFetch."""
+
+import re
+
+YTDLP_REMOTE_COMPONENTS = "ejs:github"
+
+CONFIG_SECTION = "trackfetch"
+CONFIG_FILENAME = "trackfetch.ini"
+CONFIG_ENV = "TRACKFETCH_CONFIG"
+
+DEFAULT_FORMAT = "m4a"
+DEFAULT_DELAY = 1.0
+MAX_FILENAME_BYTES = 200
+
+AUDIO_FORMATS = {
+    "mp3": [],
+    "m4a": [
+        "-f",
+        "bestaudio[ext=m4a]/bestaudio",
+    ],
+    "opus": [
+        "-f",
+        "bestaudio[acodec=opus]/bestaudio",
+    ],
+}
+
+VERSION = "2.2.6"
+USER_AGENT = (
+    f"trackfetch/{VERSION} "
+    "(https://github.com/ByteMe6/trackfetch)"
+)
+
+METADATA_PROVIDERS = (
+    "spotify",
+    "itunes",
+    "deezer",
+    "musicbrainz",
+    "vocadb",
+)
+ARTWORK_FALLBACKS = ("youtube",)
+DEFAULT_METADATA_SOURCES = ("itunes",)
+
+PROVIDER_DEFAULTS = {
+    "spotify": {
+        "enabled": False,
+        "min_interval": 0.0,
+    },
+    "itunes": {
+        "enabled": True,
+        # The Search API allows about 20 calls per minute; 3.5 s keeps a
+        # small margin below that ceiling.
+        "min_interval": 3.5,
+        "country": "us",
+    },
+    "deezer": {
+        "enabled": False,
+        "min_interval": 0.25,
+    },
+    "musicbrainz": {
+        "enabled": False,
+        "min_interval": 1.1,
+    },
+    "vocadb": {
+        "enabled": False,
+        "min_interval": 0.5,
+    },
+}
+
+DEFAULT_MATCH_THRESHOLD = 0.6
+DEFAULT_TITLE_THRESHOLD = 0.8
+YOUTUBE_DEFAULT_ENABLED = True
+LYRICS_DEFAULT_ENABLED = True
+LYRICS_LANGUAGE = "und"
+LYRICS_TIMEOUT = 15
+LYRICS_MIN_INTERVAL = 0.5
+LRCLIB_SEARCH_URL = "https://lrclib.net/api/search"
+
+LRC_TIMESTAMP_RE = re.compile(
+    r"\[(\d{1,3}):(\d{2})(?:[.:](\d{1,3}))?\]"
+)
+
+CACHE_FILENAME = "metadata-cache.json"
+CACHE_VERSION = 1
+
+PROVIDER_OPTIONS = {
+    "spotify": {"enabled", "min_interval"},
+    "itunes": {"enabled", "min_interval", "country"},
+    "deezer": {"enabled", "min_interval"},
+    "musicbrainz": {"enabled", "min_interval"},
+    "vocadb": {"enabled", "min_interval"},
+}
+
+CJK_RE = re.compile(
+    r"[\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff"
+    r"\uf900-\ufaff\uac00-\ud7af]"
+)
+VOCALOID_HINTS = (
+    "vocaloid",
+    "hatsune miku",
+    "初音ミク",
+    "镜音",
+    "鏡音",
+    "巡音",
+    "gumi",
+    "ia ",
+    "kaito",
+    "meiko",
+    "v flower",
+)

@@ -2,6 +2,7 @@ import argparse
 import configparser
 import shutil
 import sys
+import time
 from pathlib import Path
 
 import pytest
@@ -36,14 +37,14 @@ def pipeline(monkeypatch):
         metadata.update(source="spotify", source_id=track.get("id"), score=1.0)
         return metadata
 
-    monkeypatch.setattr(m, "resolve_metadata", fake_resolve_metadata)
-    monkeypatch.setattr(m, "find_spotify_track", lambda sp, a, t: state["track"])
-    monkeypatch.setattr(m, "find_youtube_video", lambda a, t: state["video"])
-    monkeypatch.setattr(m, "download_audio", fake_download_audio)
-    monkeypatch.setattr(m, "download_cover", fake_download_cover)
-    monkeypatch.setattr(m, "get_spotify", lambda *a, **k: object())
-    monkeypatch.setattr(m, "fetch_lyrics", lambda *a, **k: None)
-    monkeypatch.setattr(m.time, "sleep", lambda s: None)
+    monkeypatch.setattr(m.pipeline, "resolve_metadata", fake_resolve_metadata)
+    monkeypatch.setattr(m.providers.spotify, "find_spotify_track", lambda sp, a, t: state["track"])
+    monkeypatch.setattr(m.pipeline, "find_youtube_video", lambda a, t: state["video"])
+    monkeypatch.setattr(m.pipeline, "download_audio", fake_download_audio)
+    monkeypatch.setattr(m.images, "download_cover", fake_download_cover)
+    monkeypatch.setattr(m.providers.spotify, "get_spotify", lambda *a, **k: object())
+    monkeypatch.setattr(m.pipeline, "fetch_lyrics", lambda *a, **k: None)
+    monkeypatch.setattr(time, "sleep", lambda s: None)
     return state
 
 
@@ -63,7 +64,7 @@ class TestConfigLookup:
         monkeypatch.chdir(tmp_path)
         monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "empty"))
         monkeypatch.delenv("TRACKFETCH_CONFIG", raising=False)
-        monkeypatch.setattr(m.Path, "home", classmethod(lambda cls: tmp_path / "home"))
+        monkeypatch.setattr(Path, "home", classmethod(lambda cls: tmp_path / "home"))
 
         settings, path = m.load_config()
 
@@ -86,7 +87,7 @@ class TestConfigLookup:
         monkeypatch.chdir(tmp_path)
         monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
         monkeypatch.delenv("TRACKFETCH_CONFIG", raising=False)
-        monkeypatch.setattr(m.Path, "home", classmethod(lambda cls: tmp_path / "home"))
+        monkeypatch.setattr(Path, "home", classmethod(lambda cls: tmp_path / "home"))
         write_config(tmp_path / m.CONFIG_FILENAME, "[trackfetch]\noutput = /tmp/from-cwd\n")
 
         settings, path = m.load_config()
@@ -97,7 +98,7 @@ class TestConfigLookup:
     def test_config_in_xdg_directory(self, tmp_path, monkeypatch):
         monkeypatch.chdir(tmp_path)
         monkeypatch.delenv("TRACKFETCH_CONFIG", raising=False)
-        monkeypatch.setattr(m.Path, "home", classmethod(lambda cls: tmp_path / "home"))
+        monkeypatch.setattr(Path, "home", classmethod(lambda cls: tmp_path / "home"))
         xdg = tmp_path / "xdg"
         write_config(xdg / "trackfetch" / m.CONFIG_FILENAME, "[trackfetch]\noutput = /tmp/xdg\n")
         monkeypatch.setenv("XDG_CONFIG_HOME", str(xdg))
@@ -233,7 +234,7 @@ class TestMainWithConfig:
         monkeypatch.chdir(workdir)
         monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
         monkeypatch.delenv("TRACKFETCH_CONFIG", raising=False)
-        monkeypatch.setattr(m.Path, "home", classmethod(lambda cls: tmp_path / "home"))
+        monkeypatch.setattr(Path, "home", classmethod(lambda cls: tmp_path / "home"))
 
         run_cli(monkeypatch, songs)
 
@@ -332,7 +333,7 @@ class TestMainWithConfig:
         out = tmp_path / "o"
         config = write_config(tmp_path / "cfg.ini", f"[trackfetch]\noutput = {out}\ndelay = 2.5\n")
         sleeps = []
-        monkeypatch.setattr(m.time, "sleep", sleeps.append)
+        monkeypatch.setattr(time, "sleep", sleeps.append)
 
         run_cli(monkeypatch, songs, "--config", config)
 

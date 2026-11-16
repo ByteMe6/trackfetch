@@ -41,8 +41,8 @@ Changelog = "https://github.com/ByteMe6/trackfetch/blob/master/CHANGELOG.md"
 [project.scripts]
 trackfetch = "trackfetch:main"
 
-[tool.setuptools]
-py-modules = ["trackfetch"]
+[tool.setuptools.packages.find]
+include = ["trackfetch", "trackfetch.*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

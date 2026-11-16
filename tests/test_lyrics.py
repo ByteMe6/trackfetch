@@ -1,5 +1,6 @@
 import argparse
 import sys
+from pathlib import Path
 
 import pytest
 from mutagen.id3 import COMM, ID3, TCOM, TIT2, USLT
@@ -451,7 +452,7 @@ class TestLyricsCli:
         monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
         monkeypatch.delenv("TRACKFETCH_CONFIG", raising=False)
         monkeypatch.setattr(
-            m.Path, "home", classmethod(lambda cls: tmp_path / "home")
+            Path, "home", classmethod(lambda cls: tmp_path / "home")
         )
 
         self.run_cli(monkeypatch, "--list-sources", "--no-lyrics")
@@ -465,7 +466,7 @@ class TestLyricsCli:
         monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
         monkeypatch.delenv("TRACKFETCH_CONFIG", raising=False)
         monkeypatch.setattr(
-            m.Path, "home", classmethod(lambda cls: tmp_path / "home")
+            Path, "home", classmethod(lambda cls: tmp_path / "home")
         )
 
         self.run_cli(monkeypatch, "--list-sources")

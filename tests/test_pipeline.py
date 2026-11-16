@@ -1,6 +1,7 @@
 import argparse
 import shutil
 import sys
+import time
 
 import pytest
 from conftest import FIXTURES, make_track
@@ -46,7 +47,7 @@ def pipeline(monkeypatch):
         dest.write_bytes(b"\xff\xd8\xff\xe0jpeg")
 
     def fake_resolve_metadata(artist, title, source_config, runtime):
-        track = m.find_spotify_track(None, artist, title)
+        track = m.pipeline.find_spotify_track(None, artist, title)
 
         if track is None:
             return m.fallback_metadata(artist, title)
@@ -55,14 +56,14 @@ def pipeline(monkeypatch):
         metadata.update(source="spotify", source_id=track.get("id"), score=1.0)
         return metadata
 
-    monkeypatch.setattr(m, "resolve_metadata", fake_resolve_metadata)
-    monkeypatch.setattr(m, "find_spotify_track", fake_find_spotify)
-    monkeypatch.setattr(m, "find_youtube_video", lambda artist, title: state["video"])
-    monkeypatch.setattr(m, "download_audio", fake_download_audio)
-    monkeypatch.setattr(m, "download_cover", fake_download_cover)
-    monkeypatch.setattr(m, "get_spotify", lambda *a, **k: object())
-    monkeypatch.setattr(m, "fetch_lyrics", lambda *a, **k: None)
-    monkeypatch.setattr(m.time, "sleep", lambda s: None)
+    monkeypatch.setattr(m.pipeline, "resolve_metadata", fake_resolve_metadata)
+    monkeypatch.setattr(m.pipeline, "find_spotify_track", fake_find_spotify)
+    monkeypatch.setattr(m.pipeline, "find_youtube_video", lambda artist, title: state["video"])
+    monkeypatch.setattr(m.pipeline, "download_audio", fake_download_audio)
+    monkeypatch.setattr(m.images, "download_cover", fake_download_cover)
+    monkeypatch.setattr(m.providers.spotify, "get_spotify", lambda *a, **k: object())
+    monkeypatch.setattr(m.pipeline, "fetch_lyrics", lambda *a, **k: None)
+    monkeypatch.setattr(time, "sleep", lambda s: None)
     return state
 
 
@@ -80,7 +81,7 @@ class TestProcessSong:
 
     def test_embeds_plain_and_timed_lyrics(self, pipeline, tmp_path, monkeypatch):
         monkeypatch.setattr(
-            m,
+            m.pipeline,
             "fetch_lyrics",
             lambda *args, **kwargs: {
                 "plain": "Привет, мир!\nВторая строка",
@@ -115,7 +116,7 @@ class TestProcessSong:
         def boom(*args, **kwargs):
             raise AssertionError("lyrics must not be fetched")
 
-        monkeypatch.setattr(m, "fetch_lyrics", boom)
+        monkeypatch.setattr(m.pipeline, "fetch_lyrics", boom)
         config = m.build_source_config(
             argparse.Namespace(
                 metadata_sources=None,
@@ -199,14 +200,14 @@ class TestProcessSong:
         def boom(*args):
             raise ValueError("bad tag")
 
-        monkeypatch.setattr(m, "add_metadata", boom)
+        monkeypatch.setattr(m.pipeline, "add_metadata", boom)
         assert m.process_song(None, "a", "b", tmp_path, False) == (False, "metadata error: bad tag")
 
     def test_move_error(self, pipeline, tmp_path, monkeypatch):
         def boom(src, dst):
             raise OSError("disk full")
 
-        monkeypatch.setattr(m.shutil, "move", boom)
+        monkeypatch.setattr(shutil, "move", boom)
         assert m.process_song(None, "a", "b", tmp_path, False) == (False, "move error: disk full")
 
 
@@ -233,14 +234,14 @@ class TestMain:
         def video_for(artist, title):
             return None if pipeline["searched"][-1] == ("Bad", "Song") else pipeline["video"]
 
-        monkeypatch.setattr(m, "find_youtube_video", video_for)
-        real_find = m.find_spotify_track
+        monkeypatch.setattr(m.pipeline, "find_youtube_video", video_for)
+        real_find = m.pipeline.find_spotify_track
 
         def spotify_for(sp, artist, title):
             track = real_find(sp, artist, title)
             return track if artist != "Bad" else None
 
-        monkeypatch.setattr(m, "find_spotify_track", spotify_for)
+        monkeypatch.setattr(m.pipeline, "find_spotify_track", spotify_for)
 
         run_cli(monkeypatch, songs, "-o", out, "--delay", "0")
         log = capsys.readouterr().out
@@ -273,8 +274,8 @@ class TestMain:
         def spotify_for(sp, artist, title):
             return None if artist == "Bad" else pipeline["track"]
 
-        monkeypatch.setattr(m, "find_youtube_video", video_for)
-        monkeypatch.setattr(m, "find_spotify_track", spotify_for)
+        monkeypatch.setattr(m.pipeline, "find_youtube_video", video_for)
+        monkeypatch.setattr(m.pipeline, "find_spotify_track", spotify_for)
 
         run_cli(monkeypatch, songs, "-o", out, "--delay", "0")
 
@@ -313,8 +314,8 @@ class TestMain:
         def spotify_for(sp, artist, title):
             return None if artist == "Bad" else pipeline["track"]
 
-        monkeypatch.setattr(m, "find_youtube_video", video_for)
-        monkeypatch.setattr(m, "find_spotify_track", spotify_for)
+        monkeypatch.setattr(m.pipeline, "find_youtube_video", video_for)
+        monkeypatch.setattr(m.pipeline, "find_spotify_track", spotify_for)
 
         run_cli(monkeypatch, songs, "-o", out, "--no-logs", "--delay", "0")
         log = capsys.readouterr().out
@@ -346,7 +347,7 @@ class TestMain:
         songs = tmp_path / "songs.txt"
         songs.write_text("A - 1\nA - 2\nA - 3\n", encoding="utf-8")
         sleeps = []
-        monkeypatch.setattr(m.time, "sleep", sleeps.append)
+        monkeypatch.setattr(time, "sleep", sleeps.append)
         pipeline["track"] = None
 
         run_cli(monkeypatch, songs, "-o", tmp_path / "o", "--delay", "2.5")

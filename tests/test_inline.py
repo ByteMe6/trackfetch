@@ -1,5 +1,6 @@
 import shutil
 import sys
+import time
 
 import pytest
 from conftest import FIXTURES, make_track
@@ -33,13 +34,13 @@ def pipeline(monkeypatch):
         metadata.update(source="spotify", source_id=track.get("id"), score=1.0)
         return metadata
 
-    monkeypatch.setattr(m, "resolve_metadata", fake_resolve_metadata)
-    monkeypatch.setattr(m, "find_spotify_track", fake_find_spotify)
-    monkeypatch.setattr(m, "find_youtube_video", lambda a, t: state["video"])
-    monkeypatch.setattr(m, "download_audio", fake_download_audio)
-    monkeypatch.setattr(m, "download_cover", lambda url, dest: dest.write_bytes(b"x"))
-    monkeypatch.setattr(m, "get_spotify", lambda *a, **k: object())
-    monkeypatch.setattr(m.time, "sleep", lambda s: None)
+    monkeypatch.setattr(m.pipeline, "resolve_metadata", fake_resolve_metadata)
+    monkeypatch.setattr(m.providers.spotify, "find_spotify_track", fake_find_spotify)
+    monkeypatch.setattr(m.pipeline, "find_youtube_video", lambda a, t: state["video"])
+    monkeypatch.setattr(m.pipeline, "download_audio", fake_download_audio)
+    monkeypatch.setattr(m.images, "download_cover", lambda url, dest: dest.write_bytes(b"x"))
+    monkeypatch.setattr(m.providers.spotify, "get_spotify", lambda *a, **k: object())
+    monkeypatch.setattr(time, "sleep", lambda s: None)
     return state
 
 

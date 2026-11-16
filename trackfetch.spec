@@ -2,7 +2,7 @@
 
 
 a = Analysis(
-    ['trackfetch.py'],
+    ['trackfetch/__main__.py'],
     pathex=[],
     binaries=[],
     datas=[],

@@ -47,14 +47,14 @@ class TestYoutubeSearch:
             lines = [json.dumps({"id": "a"}), "WARNING: noise", json.dumps({"id": "b"})]
             return completed("\n".join(lines))
 
-        monkeypatch.setattr(m.subprocess, "run", fake_run)
+        monkeypatch.setattr(subprocess, "run", fake_run)
         assert m.youtube_search("q", limit=3) == [{"id": "a"}, {"id": "b"}]
         assert calls[0][0] == "yt-dlp"
         assert calls[0][-1] == "ytsearch3:q"
         assert "--flat-playlist" in calls[0]
 
     def test_empty_output(self, monkeypatch):
-        monkeypatch.setattr(m.subprocess, "run", lambda *a, **k: completed(""))
+        monkeypatch.setattr(subprocess, "run", lambda *a, **k: completed(""))
         assert m.youtube_search("q") == []
 
 
@@ -65,7 +65,7 @@ class TestFindYoutubeVideo:
             {"title": "Artist - Song (Official Audio)"},
             {"title": "Totally different"},
         ]
-        monkeypatch.setattr(m, "youtube_search", lambda q, limit: videos)
+        monkeypatch.setattr(m.youtube, "youtube_search", lambda q, limit: videos)
         assert m.find_youtube_video("Artist", "Song") is videos[1]
 
     def test_query_and_limit(self, monkeypatch):
@@ -75,7 +75,7 @@ class TestFindYoutubeVideo:
             seen.update(query=query, limit=limit)
             return []
 
-        monkeypatch.setattr(m, "youtube_search", fake_search)
+        monkeypatch.setattr(m.youtube, "youtube_search", fake_search)
         assert m.find_youtube_video("Artist", "Song") is None
         assert seen == {"query": "Artist Song", "limit": 5}
 
@@ -90,15 +90,15 @@ class TestDownloadAudio:
             (tmp_path / "audio.mp3").write_bytes(b"mp3")
             return completed()
 
-        monkeypatch.setattr(m.subprocess, "run", fake_run)
+        monkeypatch.setattr(subprocess, "run", fake_run)
         assert m.download_audio("https://youtu.be/x", tmp_path) == tmp_path / "audio.mp3"
 
     def test_nonzero_exit(self, monkeypatch, tmp_path):
-        monkeypatch.setattr(m.subprocess, "run", lambda cmd: completed(returncode=1))
+        monkeypatch.setattr(subprocess, "run", lambda cmd: completed(returncode=1))
         assert m.download_audio("u", tmp_path) is None
 
     def test_no_output_file(self, monkeypatch, tmp_path):
-        monkeypatch.setattr(m.subprocess, "run", lambda cmd: completed())
+        monkeypatch.setattr(subprocess, "run", lambda cmd: completed())
         assert m.download_audio("u", tmp_path) is None
 
     @pytest.mark.parametrize(
@@ -119,7 +119,7 @@ class TestDownloadAudio:
             (tmp_path / f"audio.{audio_format}").write_bytes(b"x")
             return completed()
 
-        monkeypatch.setattr(m.subprocess, "run", fake_run)
+        monkeypatch.setattr(subprocess, "run", fake_run)
         expected = tmp_path / f"audio.{audio_format}"
         assert m.download_audio("u", tmp_path, audio_format) == expected
 
@@ -128,5 +128,5 @@ class TestDownloadAudio:
             (tmp_path / "audio.webm").write_bytes(b"x")
             return completed()
 
-        monkeypatch.setattr(m.subprocess, "run", fake_run)
+        monkeypatch.setattr(subprocess, "run", fake_run)
         assert m.download_audio("u", tmp_path, "opus") is None
