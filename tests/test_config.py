@@ -42,6 +42,7 @@ def pipeline(monkeypatch):
     monkeypatch.setattr(m, "download_audio", fake_download_audio)
     monkeypatch.setattr(m, "download_cover", fake_download_cover)
     monkeypatch.setattr(m, "get_spotify", lambda *a, **k: object())
+    monkeypatch.setattr(m, "fetch_lyrics", lambda *a, **k: None)
     monkeypatch.setattr(m.time, "sleep", lambda s: None)
     return state
 

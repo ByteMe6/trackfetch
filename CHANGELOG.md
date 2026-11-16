@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- Optional lyrics embedding for MP3: plain lyrics from LRCLIB are written to the `USLT` ID3 frame and synchronized lyrics to `SYLT`. Both frames are written when timed lyrics exist, so players without `SYLT` support still show the words. Missing lyrics never fail the download.
+- `--lyrics`/`--no-lyrics` and the `lyrics_enabled` config key. Embedding is enabled by default for MP3 and does not affect the audio data or existing non-lyrics tags.
 - Configurable free metadata providers: iTunes (the new default), Deezer, MusicBrainz with Cover Art Archive, VocaDB and optional Spotify. No API key is needed except for Spotify.
 - `-s`/`--metadata-sources` with priority ordering, `none`, duplicate removal and unknown-name validation. YouTube stays a separate artwork fallback and is not part of the metadata ordering.
 - `--disable-sources`, `--provider-opt NAME.KEY=VALUE`, `--match-threshold`, `--title-threshold` and `--list-sources`.
