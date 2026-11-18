@@ -19,6 +19,7 @@ from .constants import (
     METADATA_PROVIDERS,
 )
 from .files import append_line, parse_song, read_done, read_song_file
+from .helpfmt import TrackFetchHelpFormatter
 from .pipeline import process_song
 from .runtime import MetadataCache, MetadataRuntime, RateLimiter
 from .settings import apply_config, load_config, resolve_output
@@ -85,6 +86,32 @@ def format_summary(label_text, value, role):
     )
 
 
+CONFIG_PATHS = (
+    "--config PATH",
+    "$TRACKFETCH_CONFIG",
+    "./trackfetch.ini",
+    "$XDG_CONFIG_HOME/trackfetch/trackfetch.ini",
+    "~/.config/trackfetch/trackfetch.ini",
+    "~/.trackfetch.ini",
+)
+
+EPILOG = "\n".join(
+    (
+        "Config:",
+        *(f"  {path}" for path in CONFIG_PATHS),
+        "",
+        "A flag wins over the config file, and the config file wins over "
+        "the built-in default.",
+        "",
+        "Examples:",
+        "  trackfetch songs.txt",
+        "  trackfetch --track 'Daft Punk - One More Time'",
+        "  trackfetch -o ~/Music -f m4a songs.txt",
+        "  trackfetch --list-sources --color never",
+    )
+)
+
+
 def build_parser():
     """Build the argument parser (shared with the help tests)."""
     parser = argparse.ArgumentParser(
@@ -94,18 +121,19 @@ def build_parser():
             "Download music using configurable free metadata "
             "sources and YouTube audio"
         ),
-        epilog=(
-            "A config file with the defaults can be used as well. It is "
-            "looked up in --config, $TRACKFETCH_CONFIG, ./trackfetch.ini, "
-            "$XDG_CONFIG_HOME/trackfetch/trackfetch.ini, "
-            "~/.config/trackfetch/trackfetch.ini and ~/.trackfetch.ini. "
-            "A command-line flag wins over the config file, and the config "
-            "file wins over the built-in default."
-        ),
-        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog=EPILOG,
+        formatter_class=TrackFetchHelpFormatter,
     )
 
-    parser.add_argument(
+    parser._optionals.title = "Help"
+
+    # Python 3.14+ colors help itself when stdout is a TTY; that would clash
+    # with our own theme coloring and inflate the measured widths.
+    parser.color = False
+
+    input_group = parser.add_argument_group("Input")
+
+    input_group.add_argument(
         "inputs",
         nargs="*",
         metavar="INPUT",
@@ -115,7 +143,7 @@ def build_parser():
         ),
     )
 
-    parser.add_argument(
+    input_group.add_argument(
         "--track",
         action="append",
         nargs="+",
@@ -126,7 +154,9 @@ def build_parser():
         ),
     )
 
-    parser.add_argument(
+    output_group = parser.add_argument_group("Output")
+
+    output_group.add_argument(
         "-o",
         "--output",
         type=Path,
@@ -138,7 +168,7 @@ def build_parser():
         ),
     )
 
-    parser.add_argument(
+    output_group.add_argument(
         "--config",
         type=Path,
         default=None,
@@ -148,7 +178,7 @@ def build_parser():
         ),
     )
 
-    parser.add_argument(
+    output_group.add_argument(
         "-f",
         "--format",
         choices=list(AUDIO_FORMATS),
@@ -156,21 +186,16 @@ def build_parser():
         help="Audio format (default: mp3)",
     )
 
-    parser.add_argument(
+    output_group.add_argument(
         "--title-only",
         action="store_true",
         default=None,
         help="Use only title in filename (default: off)",
     )
 
-    parser.add_argument(
-        "--delay",
-        type=float,
-        default=None,
-        help="Delay between songs in seconds (default: 1.0)",
-    )
+    metadata_group = parser.add_argument_group("Metadata")
 
-    parser.add_argument(
+    metadata_group.add_argument(
         "-s",
         "--metadata-sources",
         default=None,
@@ -182,7 +207,7 @@ def build_parser():
         ),
     )
 
-    parser.add_argument(
+    metadata_group.add_argument(
         "--disable-sources",
         default=None,
         metavar="SOURCES",
@@ -192,7 +217,7 @@ def build_parser():
         ),
     )
 
-    parser.add_argument(
+    metadata_group.add_argument(
         "--provider-opt",
         action="append",
         default=None,
@@ -203,7 +228,7 @@ def build_parser():
         ),
     )
 
-    parser.add_argument(
+    metadata_group.add_argument(
         "--match-threshold",
         type=float,
         default=None,
@@ -211,7 +236,7 @@ def build_parser():
         help="Minimum overall match score, 0.0-1.0 (default: 0.6)",
     )
 
-    parser.add_argument(
+    metadata_group.add_argument(
         "--title-threshold",
         type=float,
         default=None,
@@ -219,26 +244,35 @@ def build_parser():
         help="Minimum title similarity, 0.0-1.0 (default: 0.8)",
     )
 
-    parser.add_argument(
+    metadata_group.add_argument(
         "--list-sources",
         action="store_true",
         default=None,
         help="List available metadata sources and exit",
     )
 
-    parser.add_argument(
+    metadata_group.add_argument(
         "--spotify-client-id",
         default=None,
         help="Spotify client ID (overrides the config file and the env)",
     )
 
-    parser.add_argument(
+    metadata_group.add_argument(
         "--spotify-client-secret",
         default=None,
         help="Spotify client secret (overrides the config file and the env)",
     )
 
-    parser.add_argument(
+    behavior_group = parser.add_argument_group("Behavior")
+
+    behavior_group.add_argument(
+        "--delay",
+        type=float,
+        default=None,
+        help="Delay between songs in seconds (default: 1.0)",
+    )
+
+    behavior_group.add_argument(
         "--no-logs",
         action="store_true",
         default=None,
@@ -248,36 +282,7 @@ def build_parser():
         ),
     )
 
-    parser.add_argument(
-        "--color",
-        choices=("auto", "always", "never"),
-        default=None,
-        help=(
-            "Colorize terminal output: auto (default), always or never. "
-            "Color is on by default and off when output is redirected"
-        ),
-    )
-
-    parser.add_argument(
-        "--color-theme",
-        default=None,
-        metavar="THEME",
-        help=(
-            "Color theme: cassette (default), neon-tape, mono, vinyl "
-            "or a theme from themes.ini"
-        ),
-    )
-
-    parser.add_argument(
-        "--themes-file",
-        type=Path,
-        default=None,
-        help=(
-            "Custom theme file (default: themes.ini next to the config file)"
-        ),
-    )
-
-    parser.add_argument(
+    behavior_group.add_argument(
         "--lyrics",
         action=argparse.BooleanOptionalAction,
         default=None,
@@ -288,7 +293,7 @@ def build_parser():
         ),
     )
 
-    parser.add_argument(
+    behavior_group.add_argument(
         "--cache",
         action=argparse.BooleanOptionalAction,
         default=None,
@@ -299,7 +304,54 @@ def build_parser():
         ),
     )
 
+    appearance_group = parser.add_argument_group("Appearance")
+
+    appearance_group.add_argument(
+        "--color",
+        choices=("auto", "always", "never"),
+        default=None,
+        help=(
+            "Colorize terminal output: auto (default), always or never. "
+            "Color is on by default and off when output is redirected"
+        ),
+    )
+
+    appearance_group.add_argument(
+        "--color-theme",
+        default=None,
+        metavar="THEME",
+        help=(
+            "Color theme: cassette (default), neon-tape, mono, vinyl "
+            "or a theme from themes.ini"
+        ),
+    )
+
+    appearance_group.add_argument(
+        "--themes-file",
+        type=Path,
+        default=None,
+        help=(
+            "Custom theme file (default: themes.ini next to the config file)"
+        ),
+    )
+
     return parser
+
+
+def early_color_mode(argv):
+    """Read --color before parsing so -h can honor it.
+
+    ``argparse`` prints help and exits from inside ``parse_args``, before the
+    parsed value is available, so the mode has to be known up front.
+    """
+    for index, arg in enumerate(argv):
+        if arg == "--color" and index + 1 < len(argv):
+            return argv[index + 1]
+
+        if arg.startswith("--color="):
+            return arg.split("=", 1)[1]
+
+    return colors.DEFAULT_COLOR_MODE
 
 
 def main():
@@ -307,6 +359,12 @@ def main():
         sys.stdout.reconfigure(line_buffering=True)
 
     except (AttributeError, ValueError):
+        pass
+
+    try:
+        colors.set_color_mode(early_color_mode(sys.argv[1:]))
+
+    except ValueError:
         pass
 
     parser = build_parser()

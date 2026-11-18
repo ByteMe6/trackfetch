@@ -18,6 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - `--lyrics`/`--no-lyrics` and the `lyrics_enabled` config key. Embedding is enabled by default for all formats and does not affect the audio data or existing non-lyrics tags.
 - `--cache`/`--no-cache` and the `cache_enabled` config key to turn off `metadata-cache.json` reuse and rewriting.
 - A compact `--help` with a short `usage:` line, every option listed exactly once, and the config-file lookup order in the epilog.
+- `--help` groups options into Help, Input, Output, Metadata, Behavior and Appearance, aligns every description in a fixed column at any terminal width, wraps long flags without a blank line, and ends with a Config section (the six lookup paths in priority order) and an Examples section. Color is applied after wrapping, so `--color always` strips down to exactly the `--color never` output.
 - Configurable free metadata providers: iTunes (the new default), Deezer, MusicBrainz with Cover Art Archive, VocaDB and optional Spotify. No API key is needed except for Spotify.
 - `-s`/`--metadata-sources` with priority ordering, `none`, duplicate removal and unknown-name validation. YouTube stays a separate artwork fallback and is not part of the metadata ordering.
 - `--disable-sources`, `--provider-opt NAME.KEY=VALUE`, `--match-threshold`, `--title-threshold` and `--list-sources`.
