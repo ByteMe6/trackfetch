@@ -3,6 +3,8 @@
 
 import argparse
 import configparser
+import contextlib
+import io
 import math
 import sys
 import time
@@ -354,6 +356,94 @@ def early_color_mode(argv):
     return colors.DEFAULT_COLOR_MODE
 
 
+def _help_preparse(argv):
+    """Parse only the options that decide how help itself is rendered."""
+    pre = argparse.ArgumentParser(add_help=False, allow_abbrev=False)
+    pre.add_argument("--color")
+    pre.add_argument("--color-theme")
+    pre.add_argument("--themes-file")
+    pre.add_argument("--config", type=Path)
+
+    try:
+        with contextlib.redirect_stderr(io.StringIO()):
+            options, _unknown = pre.parse_known_args(argv)
+
+    except SystemExit:
+        return None
+
+    return options
+
+
+def _warn(message):
+    print(f"WARNING: {message}", file=sys.stderr)
+
+
+def help_requested(argv):
+    """Return whether this run only asks for help."""
+    return any(arg in ("-h", "--help") for arg in argv)
+
+
+def prepare_help_style(argv):
+    """Apply color mode and theme before argparse renders ``-h``.
+
+    The precedence matches the rest of the program: a flag wins over the
+    config file, which wins over the built-in default. Any problem falls back
+    to the default theme with a warning on stderr, so help always prints.
+    """
+    if not help_requested(argv):
+        return
+
+    options = _help_preparse(argv)
+
+    if options is None:
+        return
+
+    try:
+        settings, config_path = load_config(options.config)
+
+    except (FileNotFoundError, configparser.Error) as error:
+        _warn(f"Ignoring config for help output: {error}")
+        settings, config_path = {}, None
+
+    mode = (
+        options.color
+        or config_str_value(settings, "color")
+        or colors.DEFAULT_COLOR_MODE
+    )
+
+    try:
+        colors.set_color_mode(mode)
+
+    except ValueError as error:
+        _warn(f"{error}; using {colors.DEFAULT_COLOR_MODE} for help")
+        colors.set_color_mode(colors.DEFAULT_COLOR_MODE)
+
+    explicit_themes_file = (
+        options.themes_file
+        or config_str_value(settings, "themes_file")
+    )
+
+    try:
+        theme_path = find_theme_file(explicit_themes_file, config_path)
+        load_theme_file(theme_path, required=bool(explicit_themes_file))
+
+    except (OSError, ValueError) as error:
+        _warn(f"Ignoring themes for help output: {error}")
+
+    theme = (
+        options.color_theme
+        or config_str_value(settings, "color_theme")
+        or colors.DEFAULT_THEME
+    )
+
+    try:
+        colors.set_theme(theme)
+
+    except ValueError as error:
+        _warn(f"{error}; using {colors.DEFAULT_THEME} for help")
+        colors.set_theme(colors.DEFAULT_THEME)
+
+
 def main():
     try:
         sys.stdout.reconfigure(line_buffering=True)
@@ -366,6 +456,8 @@ def main():
 
     except ValueError:
         pass
+
+    prepare_help_style(sys.argv[1:])
 
     parser = build_parser()
 

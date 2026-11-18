@@ -344,3 +344,230 @@ class TestColorStability:
         colors.set_color_mode("auto")
 
         assert "\x1b[" not in render(parser, 100)
+
+
+def cli_help(args, env_extra=None, width=100):
+    """Run ``trackfetch -h ...`` in a subprocess and return its output."""
+    import os
+    import subprocess
+    import sys
+
+    env = dict(
+        os.environ,
+        COLUMNS=str(width),
+        COLORTERM="truecolor",
+    )
+    env.update(env_extra or {})
+
+    return subprocess.run(
+        [sys.executable, "-m", "trackfetch", *args],
+        capture_output=True,
+        text=True,
+        env=env,
+        check=True,
+    )
+
+
+BUILTIN_THEMES = ("cassette", "neon-tape", "mono", "vinyl")
+
+
+class TestThemeRoles:
+    @pytest.mark.parametrize("theme", BUILTIN_THEMES)
+    def test_every_builtin_theme_defines_help_roles(self, theme):
+        palette = colors.THEMES[theme]
+
+        for role in colors.HELP_ROLES:
+            assert role in palette, f"{theme} is missing {role}"
+
+    def test_help_roles_are_part_of_the_role_list(self):
+        for role in colors.HELP_ROLES:
+            assert role in colors.ROLES
+
+    def test_unknown_custom_role_is_rejected(self, tmp_path):
+        from trackfetch import themes
+
+        path = tmp_path / "themes.ini"
+        path.write_text("[mine]\nnotarole = #fff\n", encoding="utf-8")
+
+        with pytest.raises(ValueError, match="unknown option"):
+            themes.parse_theme_file(path)
+
+    def test_missing_help_roles_fall_back(self):
+        core = {
+            role: dict(colors.THEMES["cassette"][role])
+            for role in colors.ROLES
+            if role not in colors.HELP_ROLES
+        }
+
+        palette = colors.normalize_palette(core)
+
+        for role in colors.HELP_ROLES:
+            fallback = colors.HELP_ROLE_FALLBACK[role]
+            assert palette[role] == palette[fallback]
+
+    def test_core_role_missing_is_an_error(self):
+        palette = {
+            role: dict(colors.THEMES["cassette"][role])
+            for role in colors.ROLES
+            if role != "accent"
+        }
+
+        with pytest.raises(ValueError, match="missing"):
+            colors.normalize_palette(palette)
+
+    def test_normalize_keeps_explicit_help_roles(self):
+        palette = {
+            role: dict(colors.THEMES["cassette"][role])
+            for role in colors.ROLES
+        }
+        palette["heading"] = {"16": 31, "256": 196, "truecolor": (255, 0, 0)}
+        palette.pop("flag")
+
+        result = colors.normalize_palette(palette)
+
+        assert result["heading"]["truecolor"] == (255, 0, 0)
+        assert result["flag"] == result["accent"]
+
+    @pytest.mark.parametrize("theme", BUILTIN_THEMES)
+    def test_help_uses_the_theme_palette(self, parser, theme, monkeypatch):
+        monkeypatch.setenv("COLORTERM", "truecolor")
+        colors.set_theme(theme)
+        colors.set_color_mode("always")
+
+        try:
+            text = render(parser, 100)
+        finally:
+            colors.set_color_mode("never")
+
+        assert "\x1b[" in text
+
+        if theme != "mono":
+            code = colors.paint("x", "accent").split("x")[0]
+            assert code in text
+
+
+class TestCliThemes:
+    @pytest.mark.parametrize("theme", BUILTIN_THEMES)
+    def test_always_colors_every_theme(self, theme):
+        result = cli_help(["-h", "--color", "always", "--color-theme", theme])
+
+        assert "\x1b[" in result.stdout
+
+    @pytest.mark.parametrize("theme", BUILTIN_THEMES)
+    @pytest.mark.parametrize("width", WIDTHS)
+    def test_stripped_always_equals_never(self, theme, width):
+        always = cli_help(
+            ["-h", "--color", "always", "--color-theme", theme],
+            width=width,
+        )
+        never = cli_help(
+            ["-h", "--color", "never", "--color-theme", theme],
+            width=width,
+        )
+
+        assert "\x1b[" not in never.stdout
+        assert strip_ansi(always.stdout) == never.stdout
+
+    def test_pipe_has_no_ansi(self):
+        result = cli_help(["-h"])
+
+        assert "\x1b[" not in result.stdout
+
+    def test_no_color_env_is_plain(self):
+        result = cli_help(["-h", "--color", "auto"], {"NO_COLOR": "1"})
+
+        assert "\x1b[" not in result.stdout
+
+    def test_theme_from_config(self, tmp_path):
+        config = tmp_path / "trackfetch.ini"
+        config.write_text(
+            "[trackfetch]\ncolor = always\ncolor_theme = vinyl\n",
+            encoding="utf-8",
+        )
+
+        result = cli_help(["-h"], {"TRACKFETCH_CONFIG": str(config)})
+
+        assert "\x1b[" in result.stdout
+        assert "212;175;55" in result.stdout
+
+    def test_flag_beats_config_theme(self, tmp_path):
+        config = tmp_path / "trackfetch.ini"
+        config.write_text(
+            "[trackfetch]\ncolor = always\ncolor_theme = vinyl\n",
+            encoding="utf-8",
+        )
+
+        result = cli_help(
+            ["-h", "--color-theme", "neon-tape"],
+            {"TRACKFETCH_CONFIG": str(config)},
+        )
+
+        assert "95;215;255" in result.stdout
+        assert "212;175;55" not in result.stdout
+
+    def test_custom_theme_applies_to_help(self, tmp_path):
+        theme_file = tmp_path / "themes.ini"
+        theme_file.write_text(
+            "[mine]\n"
+            "base = cassette\n"
+            "heading = #ff0000\n"
+            "prog = #00ff00\n"
+            "flag = #0000ff\n",
+            encoding="utf-8",
+        )
+
+        result = cli_help(
+            [
+                "-h",
+                "--color",
+                "always",
+                "--color-theme",
+                "mine",
+                "--themes-file",
+                str(theme_file),
+            ]
+        )
+
+        assert "255;0;0" in result.stdout
+        assert "0;255;0" in result.stdout
+        assert "0;0;255" in result.stdout
+
+    def test_custom_theme_without_help_roles_still_prints(self, tmp_path):
+        theme_file = tmp_path / "themes.ini"
+        theme_file.write_text(
+            "[plain]\nbase = cassette\naccent = #ff8800\n",
+            encoding="utf-8",
+        )
+
+        result = cli_help(
+            [
+                "-h",
+                "--color",
+                "always",
+                "--color-theme",
+                "plain",
+                "--themes-file",
+                str(theme_file),
+            ]
+        )
+
+        assert result.returncode == 0
+        assert "usage: trackfetch" in strip_ansi(result.stdout)
+
+    def test_unknown_theme_warns_and_prints_default(self):
+        result = cli_help(
+            ["-h", "--color", "always", "--color-theme", "nope"]
+        )
+
+        assert result.returncode == 0
+        assert "usage: trackfetch" in strip_ansi(result.stdout)
+        assert "nope" in result.stderr
+        assert "cassette" in result.stderr
+
+    def test_mono_help_has_only_attributes(self):
+        result = cli_help(["-h", "--color", "always", "--color-theme", "mono"])
+
+        codes = set(re.findall(r"\x1b\[([0-9;]*)m", result.stdout))
+
+        # Only the reset and bold/dim attributes, never a color code.
+        assert codes <= {"0", "1", "2"}
