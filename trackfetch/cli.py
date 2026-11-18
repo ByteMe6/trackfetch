@@ -22,8 +22,6 @@ from .constants import (
 )
 from .files import append_line, parse_song, read_done, read_song_file
 from .helpfmt import TrackFetchHelpFormatter
-from .pipeline import process_song
-from .runtime import MetadataCache, MetadataRuntime, RateLimiter
 from .settings import apply_config, load_config, resolve_output
 from .themes import find_theme_file, load_theme_file
 
@@ -100,6 +98,7 @@ CONFIG_PATHS = (
 EPILOG = "\n".join(
     (
         "Config:",
+        "Lookup order, first found wins:",
         *(f"  {path}" for path in CONFIG_PATHS),
         "",
         "A flag wins over the config file, and the config file wins over "
@@ -125,9 +124,8 @@ def build_parser():
         ),
         epilog=EPILOG,
         formatter_class=TrackFetchHelpFormatter,
+        add_help=False,
     )
-
-    parser._optionals.title = "Help"
 
     # Python 3.14+ colors help itself when stdout is a TTY; that would clash
     # with our own theme coloring and inflate the measured widths.
@@ -167,16 +165,6 @@ def build_parser():
             "Output directory "
             "(overrides the config file, "
             "defaults to the current directory)"
-        ),
-    )
-
-    output_group.add_argument(
-        "--config",
-        type=Path,
-        default=None,
-        help=(
-            "Path to a config file "
-            "(default: auto-detected, see below)"
         ),
     )
 
@@ -266,6 +254,24 @@ def build_parser():
     )
 
     behavior_group = parser.add_argument_group("Behavior")
+
+    behavior_group.add_argument(
+        "-h",
+        "--help",
+        action="help",
+        default=argparse.SUPPRESS,
+        help="Show this help message and exit",
+    )
+
+    behavior_group.add_argument(
+        "--config",
+        type=Path,
+        default=None,
+        help=(
+            "Path to a config file "
+            "(default: auto-detected, see below)"
+        ),
+    )
 
     behavior_group.add_argument(
         "--delay",
@@ -669,6 +675,11 @@ def main():
     )
 
     sys.stdout.flush()
+
+    # Imported here so a plain -h or --list-sources run never pays for
+    # requests, mutagen, spotipy and the provider stack.
+    from .pipeline import process_song
+    from .runtime import MetadataCache, MetadataRuntime, RateLimiter
 
     runtime = MetadataRuntime(
         cache=(

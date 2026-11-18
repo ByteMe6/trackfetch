@@ -86,6 +86,40 @@ class TestHelpOutput:
 
                 assert len(lines) == 1, f"{flag} appears in {len(lines)} lines: {lines}"
 
+    def test_each_flag_appears_exactly_once(self, help_text):
+        """Every option string is defined exactly once.
+
+        Only definition rows count. Help text may mention a flag as an
+        example (``--provider-opt``) and Examples deliberately use flags.
+        """
+        parser = build_parser()
+        options = help_text.split("\nConfig:\n", 1)[0]
+        headers = []
+
+        for line in options.splitlines():
+            if not line.startswith("  -"):
+                continue
+
+            match = re.match(r"^  (\S.*?)( {2,}|$)", line)
+
+            if match:
+                headers.append(match.group(1))
+
+        for action in parser._actions:
+            for flag in action.option_strings:
+                occurrences = sum(
+                    1
+                    for header in headers
+                    if re.search(
+                        rf"(?<![\w-]){re.escape(flag)}(?![\w-])",
+                        header,
+                    )
+                )
+
+                assert occurrences == 1, (
+                    f"{flag} is defined {occurrences} times"
+                )
+
     def test_no_duplicate_option_strings_in_parser(self):
         names = option_strings(build_parser())
 
@@ -125,7 +159,6 @@ class TestGroups:
 
     def test_named_groups_exist(self, parser):
         assert self.titles(parser) == [
-            "Help",
             "Input",
             "Output",
             "Metadata",
@@ -138,6 +171,15 @@ class TestGroups:
         dests = {action.dest for action in group._group_actions}
 
         assert {"cache_enabled", "lyrics_enabled", "delay", "no_logs"} <= dests
+
+    def test_help_and_config_are_in_behavior(self, parser):
+        group = next(g for g in parser._action_groups if g.title == "Behavior")
+        dests = {action.dest for action in group._group_actions}
+
+        assert {"help", "config"} <= dests
+
+    def test_no_single_flag_help_group(self, parser):
+        assert "Help" not in self.titles(parser)
 
     def test_metadata_flags_are_grouped(self, parser):
         group = next(g for g in parser._action_groups if g.title == "Metadata")
@@ -161,7 +203,7 @@ class TestGroups:
         assert {"color", "color_theme", "themes_file"} == dests
 
     def test_section_headings_end_with_colon(self, help_text):
-        for title in ("Help:", "Input:", "Output:", "Metadata:", "Behavior:"):
+        for title in ("Input:", "Output:", "Metadata:", "Behavior:"):
             assert f"\n{title}\n" in help_text
 
         assert "\nAppearance:\n" in help_text
@@ -227,7 +269,6 @@ class TestAlignment:
         assert lines[3] == ""
 
         for title in (
-            "Help:",
             "Input:",
             "Output:",
             "Metadata:",
