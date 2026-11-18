@@ -18,7 +18,8 @@ _ATTRS = {
 }
 
 # Roles: text, accent, accent_bright, progress, success, warning, error, skip,
-# muted, frame. Each role has a 16-color, 256-color and truecolor value.
+# muted, frame, plus the help roles heading, prog, flag, metavar, choices,
+# default and dim. Each role has a 16-color, 256-color and truecolor value.
 THEMES = {
     "cassette": {
         "text": {"16": None, "256": None, "truecolor": None},
@@ -31,6 +32,13 @@ THEMES = {
         "skip": {"16": 90, "256": 246, "truecolor": (161, 136, 127)},
         "muted": {"16": 2, "256": 243, "truecolor": (141, 120, 106)},
         "frame": {"16": 2, "256": 240, "truecolor": (90, 70, 54)},
+        "heading": {"16": 96, "256": 80, "truecolor": (128, 203, 196)},
+        "prog": {"16": 96, "256": 80, "truecolor": (128, 203, 196)},
+        "flag": {"16": 36, "256": 73, "truecolor": (77, 182, 172)},
+        "metavar": {"16": 33, "256": 179, "truecolor": (224, 164, 88)},
+        "choices": {"16": 32, "256": 107, "truecolor": (143, 188, 106)},
+        "default": {"16": 2, "256": 243, "truecolor": (141, 120, 106)},
+        "dim": {"16": 2, "256": 243, "truecolor": (141, 120, 106)},
     },
     "neon-tape": {
         "text": {"16": None, "256": None, "truecolor": None},
@@ -43,6 +51,13 @@ THEMES = {
         "skip": {"16": 90, "256": 245, "truecolor": (138, 138, 138)},
         "muted": {"16": 2, "256": 66, "truecolor": (107, 122, 138)},
         "frame": {"16": 2, "256": 237, "truecolor": (51, 71, 91)},
+        "heading": {"16": 96, "256": 81, "truecolor": (95, 215, 255)},
+        "prog": {"16": 96, "256": 81, "truecolor": (95, 215, 255)},
+        "flag": {"16": 36, "256": 37, "truecolor": (0, 175, 175)},
+        "metavar": {"16": 35, "256": 177, "truecolor": (215, 135, 255)},
+        "choices": {"16": 32, "256": 71, "truecolor": (95, 175, 95)},
+        "default": {"16": 2, "256": 66, "truecolor": (107, 122, 138)},
+        "dim": {"16": 2, "256": 66, "truecolor": (107, 122, 138)},
     },
     "mono": {
         "text": {"16": None, "256": None, "truecolor": None},
@@ -55,6 +70,13 @@ THEMES = {
         "skip": {"16": 90, "256": 243, "truecolor": (122, 122, 122)},
         "muted": {"16": 2, "256": 240, "truecolor": (106, 106, 106)},
         "frame": {"16": 2, "256": 238, "truecolor": (68, 68, 68)},
+        "heading": {"16": None, "256": None, "truecolor": None},
+        "prog": {"16": None, "256": None, "truecolor": None},
+        "flag": {"16": None, "256": None, "truecolor": None},
+        "metavar": {"16": None, "256": None, "truecolor": None},
+        "choices": {"16": None, "256": None, "truecolor": None},
+        "default": {"16": None, "256": None, "truecolor": None},
+        "dim": {"16": None, "256": None, "truecolor": None},
     },
     "vinyl": {
         "text": {"16": None, "256": None, "truecolor": None},
@@ -67,12 +89,41 @@ THEMES = {
         "skip": {"16": 90, "256": 246, "truecolor": (138, 122, 138)},
         "muted": {"16": 2, "256": 60, "truecolor": (117, 100, 125)},
         "frame": {"16": 2, "256": 239, "truecolor": (74, 54, 84)},
+        "heading": {"16": 93, "256": 222, "truecolor": (240, 207, 106)},
+        "prog": {"16": 93, "256": 222, "truecolor": (240, 207, 106)},
+        "flag": {"16": 33, "256": 178, "truecolor": (212, 175, 55)},
+        "metavar": {"16": 35, "256": 170, "truecolor": (198, 95, 215)},
+        "choices": {"16": 32, "256": 108, "truecolor": (143, 188, 143)},
+        "default": {"16": 2, "256": 60, "truecolor": (117, 100, 125)},
+        "dim": {"16": 2, "256": 60, "truecolor": (117, 100, 125)},
     },
 }
 
 DEFAULT_THEME = "cassette"
 DEFAULT_COLOR_MODE = "auto"
 _COLOR_MODES = ("auto", "always", "never")
+HELP_ROLES = (
+    "heading",
+    "prog",
+    "flag",
+    "metavar",
+    "choices",
+    "default",
+    "dim",
+)
+
+# A custom theme that predates the help roles inherits each missing one from
+# the closest existing role instead of failing to load.
+HELP_ROLE_FALLBACK = {
+    "heading": "accent_bright",
+    "prog": "accent_bright",
+    "flag": "accent",
+    "metavar": "progress",
+    "choices": "success",
+    "default": "muted",
+    "dim": "muted",
+}
+
 ROLES = (
     "text",
     "accent",
@@ -84,6 +135,7 @@ ROLES = (
     "skip",
     "muted",
     "frame",
+    *HELP_ROLES,
 )
 _BUILTIN_THEMES = frozenset(THEMES)
 
@@ -102,6 +154,31 @@ def is_builtin_theme(name: str) -> bool:
     return str(name).strip().lower() in _BUILTIN_THEMES
 
 
+def normalize_palette(palette):
+    """Complete a palette, filling help roles from their closest relatives.
+
+    Core roles are required. A custom theme written before the help roles
+    existed keeps working: each missing help role falls back to a related
+    core role (for example ``heading`` to ``accent_bright``).
+    """
+    palette = {role: value for role, value in palette.items()}
+    missing = [
+        role for role in ROLES
+        if role not in palette and role not in HELP_ROLES
+    ]
+
+    if missing:
+        raise ValueError(
+            f"Color theme is missing: {', '.join(missing)}"
+        )
+
+    for role in HELP_ROLES:
+        if role not in palette:
+            palette[role] = dict(palette[HELP_ROLE_FALLBACK[role]])
+
+    return palette
+
+
 def register_theme(name: str, palette) -> None:
     """Add a custom theme parsed from ``themes.ini``."""
     name = str(name).strip().lower()
@@ -114,12 +191,7 @@ def register_theme(name: str, palette) -> None:
             f"Color theme '{name}' is built in; choose another name"
         )
 
-    missing = [role for role in ROLES if role not in palette]
-
-    if missing:
-        raise ValueError(
-            f"Color theme '{name}' is missing: {', '.join(missing)}"
-        )
+    palette = normalize_palette(palette)
 
     for role in ROLES:
         entry = palette[role]
@@ -255,17 +327,22 @@ def paint(text, *styles, stream=None) -> str:
     codes = []
 
     for style in styles:
-        if style in _ATTRS:
-            codes.append(str(_ATTRS[style]))
+        # A name can be both a theme role and an attribute (only "dim" is).
+        # The role wins when it has a color; otherwise the attribute applies,
+        # which keeps Mono's colorless "dim" role visibly quieter.
+        code = None
 
-        elif style in THEMES[_theme]:
+        if style in THEMES[_theme]:
             code = _role_code(style, depth)
 
-            if code:
-                codes.append(code)
+        if code is None and style in _ATTRS:
+            code = str(_ATTRS[style])
 
-        else:
+        if code is None and style not in THEMES[_theme]:
             raise ValueError(f"Unknown color style: {style!r}")
+
+        if code and code not in codes:
+            codes.append(code)
 
     if not codes:
         return str(text)

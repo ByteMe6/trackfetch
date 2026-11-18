@@ -216,6 +216,7 @@ def parse_theme_file(path) -> dict:
         palette = {
             role: dict(base[role])
             for role in colors.ROLES
+            if role in base
         }
 
         for key, value in parser.items(section, raw=True):
@@ -232,7 +233,7 @@ def parse_theme_file(path) -> dict:
 
             palette[key] = _parse_color(value, f"{name}.{key}")
 
-        parsed[name] = palette
+        parsed[name] = colors.normalize_palette(palette)
 
     return parsed
 
