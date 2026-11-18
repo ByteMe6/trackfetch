@@ -5,6 +5,7 @@ import json
 import subprocess
 from pathlib import Path
 
+from . import colors
 from .constants import AUDIO_FORMATS, YTDLP_REMOTE_COMPONENTS
 from .matching import normalize, similarity
 
@@ -127,7 +128,7 @@ def score_youtube_result(
 def find_youtube_video(artist: str, title: str):
     query = f"{artist} {title}"
 
-    print(f"Searching YouTube: {query}")
+    print(colors.muted(f"Searching YouTube: {query}"))
 
     videos = youtube_search(query, limit=5)
 
@@ -145,8 +146,10 @@ def find_youtube_video(artist: str, title: str):
         )
 
         print(
-            f"  YouTube score {score:.2f}: "
-            f"{video.get('title', 'Unknown')}"
+            colors.muted(
+                f"  YouTube score {score:.2f}: "
+                f"{video.get('title', 'Unknown')}"
+            )
         )
 
         if score > best_score:
@@ -155,7 +158,7 @@ def find_youtube_video(artist: str, title: str):
 
     if best_video:
         print(
-            f"Selected: "
+            f"{colors.label('Selected:')} "
             f"{best_video.get('title', 'Unknown')}"
         )
 

@@ -212,7 +212,7 @@ class TestMainWithConfig:
 
         run_cli(monkeypatch, songs, "--config", config)
 
-        assert (out / "Daft Punk - One More Time.m4a").exists()
+        assert (out / "Daft Punk - One More Time.mp3").exists()
 
     def test_flag_overrides_config(self, pipeline, monkeypatch, tmp_path):
         songs = tmp_path / "songs.txt"
@@ -223,7 +223,7 @@ class TestMainWithConfig:
 
         run_cli(monkeypatch, songs, "--config", config, "-o", flag_out)
 
-        assert (flag_out / "Daft Punk - One More Time.m4a").exists()
+        assert (flag_out / "Daft Punk - One More Time.mp3").exists()
         assert not config_out.exists()
 
     def test_current_directory_is_used_without_config(self, pipeline, monkeypatch, tmp_path):
@@ -238,7 +238,7 @@ class TestMainWithConfig:
 
         run_cli(monkeypatch, songs)
 
-        assert (workdir / "Daft Punk - One More Time.m4a").exists()
+        assert (workdir / "Daft Punk - One More Time.mp3").exists()
 
     def test_invalid_config_file_exits(self, monkeypatch, tmp_path, capsys):
         songs = tmp_path / "songs.txt"
@@ -279,7 +279,7 @@ class TestMainWithConfig:
 
         run_cli(monkeypatch, "--config", config)
 
-        assert (out / "Daft Punk - One More Time.m4a").exists()
+        assert (out / "Daft Punk - One More Time.mp3").exists()
 
     def test_missing_explicit_config_exits(self, monkeypatch, tmp_path, capsys):
         songs = tmp_path / "songs.txt"
@@ -325,7 +325,7 @@ class TestMainWithConfig:
 
         run_cli(monkeypatch, songs, "--config", config)
 
-        assert (out / "One More Time.m4a").exists()
+        assert (out / "One More Time.mp3").exists()
 
     def test_delay_from_config(self, pipeline, monkeypatch, tmp_path):
         songs = tmp_path / "songs.txt"
@@ -353,7 +353,7 @@ class TestMainWithConfig:
         run_cli(monkeypatch, songs, "--config", config)
         log = capsys.readouterr().out
 
-        assert (out / "Daft Punk - One More Time.m4a").exists()
+        assert (out / "Daft Punk - One More Time.mp3").exists()
         assert done.read_text(encoding="utf-8") == "Daft Punk - One More Time\n"
         assert "DONE FILE" not in log
 

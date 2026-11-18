@@ -8,6 +8,7 @@ import sys
 import time
 from pathlib import Path
 
+from . import colors
 from .config import build_source_config, config_str_value, format_source_list
 from .constants import (
     AUDIO_FORMATS,
@@ -21,6 +22,7 @@ from .files import append_line, parse_song, read_done, read_song_file
 from .pipeline import process_song
 from .runtime import MetadataCache, MetadataRuntime, RateLimiter
 from .settings import apply_config, load_config, resolve_output
+from .themes import find_theme_file, load_theme_file
 
 
 def collect_sources(args, settings):
@@ -74,14 +76,20 @@ def collect_sources(args, settings):
 
     return sources
 
-def main():
-    try:
-        sys.stdout.reconfigure(line_buffering=True)
+def format_summary(label_text, value, role):
+    """Color a summary label and value, muting zero counts."""
+    value_style = role if value else "muted"
+    return (
+        f"{colors.paint(label_text, role, 'bold')} "
+        f"{colors.paint(value, value_style)}"
+    )
 
-    except (AttributeError, ValueError):
-        pass
 
+def build_parser():
+    """Build the argument parser (shared with the help tests)."""
     parser = argparse.ArgumentParser(
+        prog="trackfetch",
+        usage="%(prog)s [OPTIONS] [INPUT ...]",
         description=(
             "Download music using configurable free metadata "
             "sources and YouTube audio"
@@ -145,7 +153,7 @@ def main():
         "--format",
         choices=list(AUDIO_FORMATS),
         default=None,
-        help="Audio format (default: m4a)",
+        help="Audio format (default: mp3)",
     )
 
     parser.add_argument(
@@ -241,41 +249,120 @@ def main():
     )
 
     parser.add_argument(
+        "--color",
+        choices=("auto", "always", "never"),
+        default=None,
+        help=(
+            "Colorize terminal output: auto (default), always or never. "
+            "Color is on by default and off when output is redirected"
+        ),
+    )
+
+    parser.add_argument(
+        "--color-theme",
+        default=None,
+        metavar="THEME",
+        help=(
+            "Color theme: cassette (default), neon-tape, mono, vinyl "
+            "or a theme from themes.ini"
+        ),
+    )
+
+    parser.add_argument(
+        "--themes-file",
+        type=Path,
+        default=None,
+        help=(
+            "Custom theme file (default: themes.ini next to the config file)"
+        ),
+    )
+
+    parser.add_argument(
         "--lyrics",
         action=argparse.BooleanOptionalAction,
         default=None,
         dest="lyrics_enabled",
         help=(
-            "Embed lyrics from LRCLIB into MP3 tags as USLT and, when "
-            "timed lyrics are available, SYLT (default: on)"
+            "Embed lyrics from LRCLIB into the tags: ID3 USLT/SYLT for MP3, "
+            "©lyr for M4A, LYRICS for Opus (default: on)"
         ),
     )
 
+    parser.add_argument(
+        "--cache",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        dest="cache_enabled",
+        help=(
+            "Reuse and update metadata-cache.json in the output directory "
+            "(default: on)"
+        ),
+    )
+
+    return parser
+
+
+def main():
+    try:
+        sys.stdout.reconfigure(line_buffering=True)
+
+    except (AttributeError, ValueError):
+        pass
+
+    parser = build_parser()
+
     args = parser.parse_args()
+
+    colors.set_color_mode(args.color or colors.DEFAULT_COLOR_MODE)
+    colors.set_theme(colors.DEFAULT_THEME)
 
     try:
         settings, config_path = load_config(args.config)
 
     except FileNotFoundError as error:
-        print(f"ERROR: {error}")
+        print(colors.error(f"ERROR: {error}"))
         sys.exit(1)
 
     except configparser.Error as error:
-        print(f"ERROR: Invalid config file: {error}")
+        print(colors.error(f"ERROR: Invalid config file: {error}"))
+        sys.exit(1)
+
+    explicit_themes_file = (
+        args.themes_file
+        or config_str_value(settings, "themes_file")
+    )
+
+    try:
+        theme_path = find_theme_file(explicit_themes_file, config_path)
+        load_theme_file(theme_path, required=bool(explicit_themes_file))
+
+    except (OSError, ValueError) as error:
+        print(colors.error(f"ERROR: {error}"))
         sys.exit(1)
 
     try:
         apply_config(args, parser, settings)
 
     except ValueError as error:
-        print(f"ERROR: {error}")
+        print(colors.error(f"ERROR: {error}"))
+        sys.exit(1)
+
+    args.color = args.color or colors.DEFAULT_COLOR_MODE
+    args.color_theme = args.color_theme or colors.DEFAULT_THEME
+    colors.set_color_mode(args.color)
+
+    try:
+        colors.set_theme(args.color_theme)
+
+    except ValueError as error:
+        print(colors.error(f"ERROR: {error}"))
         sys.exit(1)
 
     try:
         source_config = build_source_config(args, settings)
 
     except ValueError as error:
-        print(f"ERROR: {error}")
+        print(colors.error(f"ERROR: {error}"))
         sys.exit(1)
 
     if args.list_sources:
@@ -298,30 +385,32 @@ def main():
         args.no_logs = False
 
     if not math.isfinite(args.delay):
-        print(f"ERROR: Delay must be a finite number: {args.delay}")
+        print(colors.error(f"ERROR: Delay must be a finite number: {args.delay}"))
         sys.exit(1)
 
     if args.delay < 0:
-        print(f"ERROR: Delay must not be negative: {args.delay}")
+        print(colors.error(f"ERROR: Delay must not be negative: {args.delay}"))
         sys.exit(1)
 
     try:
         sources = collect_sources(args, settings)
 
     except ValueError as error:
-        print(f"ERROR: {error}")
+        print(colors.error(f"ERROR: {error}"))
         sys.exit(1)
 
     if not sources:
         print(
-            "ERROR: No input. "
-            "Pass a file or an inline 'Artist - Title' track, "
-            "or set 'input' in the config file."
+            colors.error(
+                "ERROR: No input. "
+                "Pass a file or an inline 'Artist - Title' track, "
+                "or set 'input' in the config file."
+            )
         )
         sys.exit(1)
 
     if args.output.exists() and not args.output.is_dir():
-        print(f"ERROR: Output path is not a directory: {args.output}")
+        print(colors.error(f"ERROR: Output path is not a directory: {args.output}"))
         sys.exit(1)
 
     songs = []
@@ -344,7 +433,7 @@ def main():
                 songs.append(song)
 
     if not songs:
-        print("No songs to download.")
+        print(colors.warning("No songs to download."))
         sys.exit(0)
 
     unique_songs = []
@@ -378,48 +467,65 @@ def main():
         failed_file = None
         done = set()
 
-    print(f"Found {len(songs)} songs")
+    print(f"{colors.label('Found')} {len(songs)} songs")
 
     if duplicates:
-        print(f"Removed {duplicates} duplicate(s)")
+        print(f"{colors.label('Removed')} {duplicates} duplicate(s)")
 
     if not args.no_logs:
-        print(f"Already completed: {len(done)} (from done.txt)")
+        print(
+            f"{colors.label('Already completed:')} {len(done)} "
+            f"{colors.muted('(from done.txt)')}"
+        )
 
     if skipped_lines:
         print(
-            f"WARNING: skipped {len(skipped_lines)} line(s) "
-            f"that are not 'Artist - Title':"
+            colors.warning(
+                f"WARNING: skipped {len(skipped_lines)} line(s) "
+                f"that are not 'Artist - Title':"
+            )
         )
 
         for path, line in skipped_lines[:5]:
-            print(f"  {path}: {line}")
+            print(f"  {colors.muted(path)}: {line}")
 
         if len(skipped_lines) > 5:
-            print(f"  ... and {len(skipped_lines) - 5} more")
+            print(colors.muted(f"  ... and {len(skipped_lines) - 5} more"))
 
     if config_path:
-        print(f"Config: {config_path}")
+        print(f"{colors.label('Config:')} {config_path}")
 
-    print(f"Output: {args.output}")
+    print(f"{colors.label('Output:')} {args.output}")
 
     print(
-        "Metadata sources: "
-        + (", ".join(source_config.metadata_sources) or "none")
+        f"{colors.label('Metadata sources:')} "
+        + colors.accent(", ".join(source_config.metadata_sources) or "none")
     )
     print(
-        "YouTube artwork fallback: "
-        + ("enabled" if source_config.youtube_enabled else "disabled")
+        f"{colors.label('YouTube artwork fallback:')} "
+        + (
+            colors.success("enabled")
+            if source_config.youtube_enabled
+            else colors.muted("disabled")
+        )
     )
     print(
-        "Lyrics embedding: "
-        + ("enabled (MP3 only)" if source_config.lyrics_enabled else "disabled")
+        f"{colors.label('Lyrics embedding:')} "
+        + (
+            colors.success("enabled (all formats)")
+            if source_config.lyrics_enabled
+            else colors.muted("disabled")
+        )
     )
 
     sys.stdout.flush()
 
     runtime = MetadataRuntime(
-        cache=MetadataCache(args.output / CACHE_FILENAME),
+        cache=(
+            MetadataCache(args.output / CACHE_FILENAME)
+            if source_config.cache_enabled
+            else None
+        ),
         limiter=RateLimiter(
             {
                 name: source_config.interval(name)
@@ -441,12 +547,12 @@ def main():
         song_key = f"{artist} - {title}"
 
         print()
-        print("=" * 60)
-        print(f"[{number}/{len(songs)}]")
-        print(song_key)
+        print(colors.frame("=" * 60))
+        print(colors.progress(f"[{number}/{len(songs)}]"))
+        print(colors.paint(song_key, "text", "bold"))
 
         if song_key in done:
-            print("SKIP: already completed")
+            print(colors.skip("SKIP: already completed"))
             skipped += 1
             continue
 
@@ -489,13 +595,12 @@ def main():
             time.sleep(args.delay)
 
     print()
-    print("=" * 60)
-    print("FINISHED")
-    print(f"SUCCESS: {success}")
-    print(f"SKIPPED: {skipped}")
-    print(f"FAILED: {failed}")
+    print(colors.frame("=" * 60))
+    print(colors.heading("FINISHED"))
+    print(format_summary("SUCCESS:", success, "success"))
+    print(format_summary("SKIPPED:", skipped, "skip"))
+    print(format_summary("FAILED:", failed, "error"))
 
     if not args.no_logs:
-        print(f"DONE FILE: {done_file}")
-        print(f"FAILED FILE: {failed_file}")
-
+        print(f"{colors.label('DONE FILE:')} {colors.muted(done_file)}")
+        print(f"{colors.label('FAILED FILE:')} {colors.muted(failed_file)}")

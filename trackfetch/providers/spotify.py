@@ -6,6 +6,7 @@ import os
 import spotipy
 from spotipy.oauth2 import SpotifyClientCredentials
 
+from .. import colors
 from ..config import SourceConfig
 from ..errors import ProviderAuthError, ProviderError
 from ..matching import similarity
@@ -61,7 +62,7 @@ def find_spotify_track(
         if raise_errors:
             raise
 
-        print(f"WARNING: Spotify search error: {error}")
+        print(colors.warning(f"WARNING: Spotify search error: {error}"))
         return None
 
     tracks = results.get("tracks", {}).get("items", [])
@@ -102,7 +103,7 @@ def find_spotify_track(
             best_score = score
             best_track = track
 
-    print(f"Spotify match score: {best_score:.2f}")
+    print(colors.muted(f"Spotify match score: {best_score:.2f}"))
 
     return best_track
 

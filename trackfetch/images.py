@@ -5,6 +5,7 @@ from pathlib import Path
 
 import requests
 
+from . import colors
 from .constants import USER_AGENT
 from .youtube import youtube_thumbnail_urls
 
@@ -114,13 +115,16 @@ def download_best_cover(metadata, video, cover_path, youtube_enabled):
                 cover_path.replace(final_path)
 
             if final_path.stat().st_size > 0:
-                print(f"{source} cover downloaded")
+                print(
+                    f"{colors.success(source)} "
+                    f"{colors.muted('cover downloaded')}"
+                )
                 return final_path
 
         except Exception as error:
             last_error = error
 
     if last_error is not None:
-        print(f"WARNING: cover download failed: {last_error}")
+        print(colors.warning(f"WARNING: cover download failed: {last_error}"))
 
     return None

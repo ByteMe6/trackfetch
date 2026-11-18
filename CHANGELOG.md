@@ -6,9 +6,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [2.2.8] - 2026-11-18
+
 ### Added
-- Optional lyrics embedding for MP3: plain lyrics from LRCLIB are written to the `USLT` ID3 frame and synchronized lyrics to `SYLT`. Both frames are written when timed lyrics exist, so players without `SYLT` support still show the words. Missing lyrics never fail the download.
-- `--lyrics`/`--no-lyrics` and the `lyrics_enabled` config key. Embedding is enabled by default for MP3 and does not affect the audio data or existing non-lyrics tags.
+- Colorized terminal output with four built-in themes: Cassette (default), Neon Tape, Mono and Vinyl. Color covers labels, statuses, progress and separators; track titles, paths and error reasons stay plain. Output is plain when redirected, or with `NO_COLOR`, `TERM=dumb` and `--color never`.
+- `--color {auto,always,never}` and the `color` config key. `auto` is the default: color on an interactive terminal, plain text in pipes and logs.
+- `--color-theme THEME` and the `color_theme` config key to switch between the built-in themes or a custom theme.
+- Custom themes in `themes.ini` next to `trackfetch.ini`, with inheritance through `base` and colors as `#RRGGBB`, xterm 256 indexes or ANSI names. `--themes-file` and the `themes_file` config key point at another file.
+- `docs/color-themes.md` with a theme gallery, every configuration key, all theme roles, accepted color formats and precedence rules.
+- Optional lyrics embedding for every output format: plain lyrics from LRCLIB are written to `USLT` (MP3), `©lyr` (M4A) or `LYRICS` (Opus), and synchronized lyrics to `SYLT`, the `SYNCEDLYRICS` freeform atom or the `SYNCEDLYRICS` Vorbis comment respectively. Both tags are written when timed lyrics exist, so players without timed-lyrics support still show the words. Missing lyrics never fail the download.
+- `--lyrics`/`--no-lyrics` and the `lyrics_enabled` config key. Embedding is enabled by default for all formats and does not affect the audio data or existing non-lyrics tags.
+- `--cache`/`--no-cache` and the `cache_enabled` config key to turn off `metadata-cache.json` reuse and rewriting.
+- A compact `--help` with a short `usage:` line, every option listed exactly once, and the config-file lookup order in the epilog.
 - Configurable free metadata providers: iTunes (the new default), Deezer, MusicBrainz with Cover Art Archive, VocaDB and optional Spotify. No API key is needed except for Spotify.
 - `-s`/`--metadata-sources` with priority ordering, `none`, duplicate removal and unknown-name validation. YouTube stays a separate artwork fallback and is not part of the metadata ordering.
 - `--disable-sources`, `--provider-opt NAME.KEY=VALUE`, `--match-threshold`, `--title-threshold` and `--list-sources`.
@@ -21,6 +30,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - Tests for source resolution, configuration, matching, provider responses, rate limiting, failure recovery, caching, artwork and the new CLI options.
 
 ### Changed
+- The default audio format is `mp3` again, so a fresh run plays everywhere without an explicit `-f`; `m4a` and `opus` keep YouTube's original audio when you want it.
 - The single `trackfetch.py` module is now a package split by responsibility: `config`/`settings`, `runtime`, `providers/<name>`, `resolver`, `youtube`, `images`, `lyrics`, `tags`, `files`, `pipeline` and `cli`. The public `import trackfetch` API is unchanged, and `python -m trackfetch` now works as well.
 - The default metadata source is now iTunes, so Spotify credentials are optional and Spotify is disabled unless explicitly selected or enabled.
 - `get_spotify()` now returns `None` quietly when credentials are missing instead of exiting.
@@ -109,7 +119,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - PyInstaller spec, plus prebuilt binaries for Linux, macOS and Windows on x86_64 and ARM64.
 - Automated releases: pushing a new version to `master` builds and publishes all binaries.
 
-[Unreleased]: https://github.com/ByteMe6/trackfetch/compare/v2.2.7...HEAD
+[Unreleased]: https://github.com/ByteMe6/trackfetch/compare/v2.2.8...HEAD
+[2.2.8]: https://github.com/ByteMe6/trackfetch/releases/tag/v2.2.8
 [2.2.7]: https://github.com/ByteMe6/trackfetch/releases/tag/v2.2.7
 [2.2.6]: https://github.com/ByteMe6/trackfetch/releases/tag/v2.2.6
 [2.2.5]: https://github.com/ByteMe6/trackfetch/releases/tag/v2.2.5
