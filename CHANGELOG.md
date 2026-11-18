@@ -10,6 +10,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - `--help` now uses the active color theme. Seven new theme roles control it: `heading` (`usage:` and section titles), `prog` (program name), `flag` (`--long`/`-s`), `metavar`, `choices`, `default` and `dim` (config paths and secondary notes). All four built-in themes define them; a custom theme without them falls back to related core roles instead of failing.
 - The theme, color mode and `themes.ini` are chosen before the help text is built, so `--color-theme`, `--color`, `--themes-file` and the config file all apply to `-h`. An unknown theme still prints help with the default theme and warns on stderr.
 
+### Changed
+- `--config` and `-h`/`--help` moved into the Behavior group, so there is no longer a one-flag Help section.
+- The Config section of `--help` now opens with "Lookup order, first found wins:" above the six paths.
+- `import trackfetch` is lazy: constants, config and settings resolve immediately, while requests, mutagen, spotipy and the provider stack load on first use. `-h` and `--list-sources` no longer import the whole program.
+
+### Fixed
+- `trackfetch -h` no longer waits on work it does not need: the heavy modules are imported only when a command actually uses them.
+
 ## [2.2.8] - 2026-11-18
 
 ### Added

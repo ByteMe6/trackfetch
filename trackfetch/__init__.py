@@ -4,7 +4,14 @@
 This module is the public facade. Implementation lives in focused submodules;
 the names below are re-exported so ``import trackfetch`` keeps working as the
 documented entry point (including the ``trackfetch:main`` console script).
+
+Imports are lazy (PEP 562). Lightweight names — constants, config, colors,
+settings — resolve immediately, while anything that pulls in requests,
+mutagen, spotipy or the provider stack is imported on first access. That keeps
+``trackfetch -h`` and ``--list-sources`` from paying for the whole program.
 """
+
+import importlib
 
 from .cli import collect_sources, main
 from .colors import DEFAULT_COLOR_MODE, DEFAULT_THEME, theme_names
@@ -68,25 +75,6 @@ from .files import (
     read_song_file,
     sanitize_filename,
 )
-from .images import (
-    IMAGE_FORMATS,
-    detect_image_format,
-    download_best_cover,
-    download_cover,
-    image_mime_type,
-    is_image_bytes,
-)
-from .lyrics import (
-    add_m4a_lyrics,
-    add_mp3_lyrics,
-    add_opus_lyrics,
-    fetch_lyrics,
-    lrc_fraction_to_ms,
-    lrc_text,
-    parse_synced_lyrics,
-    select_lyrics,
-    split_lyrics,
-)
 from .matching import (
     artist_similarity,
     fallback_metadata,
@@ -94,36 +82,6 @@ from .matching import (
     score_metadata,
     select_best_metadata,
     similarity,
-)
-from .pipeline import process_song
-from .providers.deezer import deezer_provider
-from .providers.itunes import itunes_provider, upscale_itunes_artwork
-from .providers.musicbrainz import (
-    cover_art_archive_url,
-    musicbrainz_artist,
-    musicbrainz_provider,
-)
-from .providers.registry import PROVIDER_FUNCTIONS
-from .providers.resolver import cached_metadata, resolve_metadata
-from .providers.spotify import (
-    find_spotify_track,
-    get_spotify,
-    get_track_metadata,
-    is_spotify_auth_error,
-    spotify_credentials,
-    spotify_provider,
-)
-from .providers.vocadb import (
-    absolute_vocadb_url,
-    vocadb_picture_url,
-    vocadb_provider,
-)
-from .runtime import (
-    MetadataCache,
-    MetadataRuntime,
-    ProviderHealth,
-    RateLimiter,
-    request_json,
 )
 from .settings import (
     apply_config,
@@ -134,22 +92,117 @@ from .settings import (
     load_config,
     resolve_output,
 )
-from .tags import (
-    add_m4a_metadata,
-    add_metadata,
-    add_mp3_metadata,
-    add_opus_metadata,
-)
 from .themes import find_theme_file, load_theme_file, parse_theme_file
-from .youtube import (
-    download_audio,
-    find_youtube_video,
-    score_youtube_result,
-    youtube_search,
-    youtube_thumbnail_urls,
-)
 
 __version__ = VERSION
+
+# Names that are imported only when first used, mapped to their module.
+_LAZY_NAMES = {
+    # images (requests)
+    "IMAGE_FORMATS": ".images",
+    "detect_image_format": ".images",
+    "download_best_cover": ".images",
+    "download_cover": ".images",
+    "image_mime_type": ".images",
+    "is_image_bytes": ".images",
+    # lyrics (requests, mutagen)
+    "add_m4a_lyrics": ".lyrics",
+    "add_mp3_lyrics": ".lyrics",
+    "add_opus_lyrics": ".lyrics",
+    "fetch_lyrics": ".lyrics",
+    "lrc_fraction_to_ms": ".lyrics",
+    "lrc_text": ".lyrics",
+    "parse_synced_lyrics": ".lyrics",
+    "select_lyrics": ".lyrics",
+    "split_lyrics": ".lyrics",
+    # pipeline and runtime
+    "process_song": ".pipeline",
+    "MetadataCache": ".runtime",
+    "MetadataRuntime": ".runtime",
+    "ProviderHealth": ".runtime",
+    "RateLimiter": ".runtime",
+    "request_json": ".runtime",
+    # tags (mutagen)
+    "add_m4a_metadata": ".tags",
+    "add_metadata": ".tags",
+    "add_mp3_metadata": ".tags",
+    "add_opus_metadata": ".tags",
+    # youtube (subprocess)
+    "download_audio": ".youtube",
+    "find_youtube_video": ".youtube",
+    "score_youtube_result": ".youtube",
+    "youtube_search": ".youtube",
+    "youtube_thumbnail_urls": ".youtube",
+    # providers
+    "PROVIDER_FUNCTIONS": ".providers.registry",
+    "cached_metadata": ".providers.resolver",
+    "resolve_metadata": ".providers.resolver",
+    "deezer_provider": ".providers.deezer",
+    "itunes_provider": ".providers.itunes",
+    "upscale_itunes_artwork": ".providers.itunes",
+    "cover_art_archive_url": ".providers.musicbrainz",
+    "musicbrainz_artist": ".providers.musicbrainz",
+    "musicbrainz_provider": ".providers.musicbrainz",
+    "find_spotify_track": ".providers.spotify",
+    "get_spotify": ".providers.spotify",
+    "get_track_metadata": ".providers.spotify",
+    "is_spotify_auth_error": ".providers.spotify",
+    "spotify_credentials": ".providers.spotify",
+    "spotify_provider": ".providers.spotify",
+    "absolute_vocadb_url": ".providers.vocadb",
+    "vocadb_picture_url": ".providers.vocadb",
+    "vocadb_provider": ".providers.vocadb",
+}
+
+# Submodules importable as ``trackfetch.<name>`` without a prior import.
+_LAZY_MODULES = (
+    "cli",
+    "colors",
+    "config",
+    "constants",
+    "errors",
+    "files",
+    "helpfmt",
+    "images",
+    "lyrics",
+    "matching",
+    "pipeline",
+    "runtime",
+    "settings",
+    "tags",
+    "themes",
+    "youtube",
+    "providers",
+    "providers.deezer",
+    "providers.itunes",
+    "providers.musicbrainz",
+    "providers.registry",
+    "providers.resolver",
+    "providers.spotify",
+    "providers.vocadb",
+)
+
+
+def __getattr__(name):
+    """Import a heavy name only when it is first accessed (PEP 562)."""
+    module_name = _LAZY_NAMES.get(name)
+
+    if module_name is not None:
+        value = getattr(importlib.import_module(module_name, __name__), name)
+        globals()[name] = value
+        return value
+
+    if name in _LAZY_MODULES or name.startswith("providers."):
+        value = importlib.import_module(f".{name}", __name__)
+        globals()[name] = value
+        return value
+
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
+
+def __dir__():
+    return sorted(set(globals()) | set(__all__))
+
 
 __all__ = [
     "ARTWORK_FALLBACKS",
