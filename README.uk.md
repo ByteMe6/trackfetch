@@ -234,6 +234,12 @@ trackfetch --list-sources
 | `--color-theme` / `color_theme` | `cassette` | `cassette`, `neon-tape`, `mono`, `vinyl` або назва власної теми. |
 | `--themes-file` / `themes_file` | поруч із конфігом | Власний `themes.ini` з темами й кольорами. |
 
+`trackfetch -h` використовує ту саму тему, що й решта виводу, зокрема
+заголовки секцій, прапорці, метавари, варіанти вибору та позначки
+`(default: ...)`. Тему обрано до побудови тексту довідки, тому
+`trackfetch --color always --color-theme vinyl -h` уже кольоровий, а тема з
+конфігу застосовується і до довідки.
+
 <table>
   <tr>
     <td align="center">

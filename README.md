@@ -233,6 +233,12 @@ and error reasons stay plain. Pick another built-in theme or turn color off:
 | `--color-theme` / `color_theme` | `cassette` | `cassette`, `neon-tape`, `mono`, `vinyl`, or a custom theme name. |
 | `--themes-file` / `themes_file` | next to the config | Custom `themes.ini` with your own themes and colors. |
 
+`trackfetch -h` uses the same theme as the rest of the output, including the
+section titles, flags, metavars, choices and `(default: ...)` notes. The theme
+is chosen before the help text is built, so `trackfetch --color always
+--color-theme vinyl -h` is already colored, and a theme set in the config
+applies to help as well.
+
 <table>
   <tr>
     <td align="center">

@@ -45,6 +45,7 @@ trackfetch songs.txt --color never            # plain output
 trackfetch songs.txt --color always           # force color, even in a pipe
 trackfetch songs.txt --color-theme mono       # choose another built-in theme
 trackfetch songs.txt --color-theme vinyl --color always
+trackfetch --color always --color-theme vinyl -h   # help uses the same theme
 ```
 
 ## Settings
@@ -117,6 +118,14 @@ skip = 244
 muted = 240
 frame = 238
 text = #f2e9de
+# Optional --help roles; each falls back to a related role when omitted.
+heading = #ffb366
+prog = #ffb366
+flag = #ff8800
+metavar = 208
+choices = bright-green
+default = 244
+dim = 240
 ```
 
 Select it in `trackfetch.ini`:
@@ -139,6 +148,17 @@ from any built-in theme or from a custom theme defined earlier in the same
 file. Every role not listed keeps its inherited color, so a two-line theme
 is valid.
 
+A theme written before the help roles existed still loads: any missing help
+role falls back to a related core role (`heading` and `prog` to
+`accent_bright`, `flag` to `accent`, `metavar` to `progress`, `choices` to
+`success`, `default` and `dim` to `muted`).
+
+`-h` uses the same theme as the rest of the program. The theme, color mode
+and `themes.ini` are chosen before the help text is built, so
+`trackfetch --color always --color-theme vinyl -h` is already colored. If a
+theme or config file cannot be used, the help still prints with the default
+theme and a warning goes to stderr.
+
 ### Roles
 
 | Role | What it colors | Notes |
@@ -153,6 +173,13 @@ is valid.
 | `skip` | `SKIP` lines and a non-zero skipped total | already completed items |
 | `muted` | scores, paths, disabled values, zero totals, secondary details | dimmed context |
 | `frame` | the `====` separators | |
+| `heading` | `usage:` and the section titles in `--help` | help only |
+| `prog` | the program name in `usage:` and in help examples | help only |
+| `flag` | `--long` and `-s` names in `--help` | help only |
+| `metavar` | `ARTIST - TITLE`, `OUTPUT`, `SCORE`, `NAME.KEY=VALUE` in `--help` | help only |
+| `choices` | `{mp3,m4a,opus}` and `{auto,always,never}` in `--help` | help only |
+| `default` | the `(default: ...)` notes in `--help` | help only |
+| `dim` | config lookup paths and secondary notes in `--help` | help only |
 
 Only the foreground color is changed. Backgrounds, blinking and reverse
 video are never used, so the theme works on both dark and light terminals.
@@ -186,7 +213,9 @@ exact RGB value.
 
 The config file is never rewritten. Invalid keys, unknown bases, reserved
 theme names and malformed colors stop the run with a clear error that names
-the theme and option.
+the theme and option. The one exception is `--help`: if the theme or config
+cannot be used there, help still prints with the default theme and the
+problem goes to stderr as a warning.
 
 ## What the colors mean
 
@@ -203,6 +232,13 @@ the theme and option.
 | `ERROR:`, `FAILED:` | `error` + bold |
 | `FINISHED` | `accent_bright` + bold |
 | enabled / disabled in `--list-sources` | `success` / `muted` |
+| `usage:` and help section titles | `heading` + bold |
+| program name in help | `prog` + bold |
+| `--flag` / `-f` in help | `flag` + bold |
+| metavars in help | `metavar` |
+| choices in help | `choices` + bold |
+| `(default: ...)` in help | `default` |
+| config paths in the help epilog | `dim` |
 
 Redirected output, `--color never`, `NO_COLOR` and `TERM=dumb` produce the
 same plain text as earlier TrackFetch versions, with no escape sequences.
