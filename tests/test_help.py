@@ -51,6 +51,28 @@ def all_actions(parser):
         yield from group._group_actions
 
 
+def option_headers(help_text):
+    """Return the header part of each option row.
+
+    A row is ``  <header><padding><description>``. Python 3.10 repeats the
+    metavar after every short flag (``-o OUTPUT, --output OUTPUT``) while
+    3.13+ uses ``-o, --output OUTPUT``, so the header is taken before the
+    two-or-more spaces that start the description.
+    """
+    headers = []
+
+    for line in help_text.splitlines():
+        if not line.startswith("  -"):
+            continue
+
+        match = re.match(r"^  (\S.*?)(?: {2,}\S|$)", line)
+
+        if match:
+            headers.append(match.group(1).strip())
+
+    return headers
+
+
 class TestHelpOutput:
     def test_usage_line_is_short(self, help_text):
         first = help_text.splitlines()[0]
@@ -69,18 +91,24 @@ class TestHelpOutput:
         assert "Options:" not in help_text
 
     def test_each_option_appears_in_exactly_one_line(self, help_text):
+        """Every option string heads exactly one definition row.
+
+        Python 3.10 renders ``-o OUTPUT, --output OUTPUT`` while 3.13+
+        renders ``-o, --output OUTPUT``, so the check looks at the header
+        before the aligned description rather than at a fixed column.
+        """
         parser = build_parser()
         options = help_text.split("\nConfig:\n", 1)[0]
+        headers = option_headers(options)
 
         for action in parser._actions:
             for flag in action.option_strings:
                 lines = [
-                    line
-                    for line in options.splitlines()
-                    if line.lstrip().startswith("-")
-                    and re.search(
-                        rf"^  (?:\S+,\s+)?{re.escape(flag)}(?=[ ,])",
-                        line,
+                    header
+                    for header in headers
+                    if re.search(
+                        rf"(?<![\w-]){re.escape(flag)}(?![\w-])",
+                        header,
                     )
                 ]
 
