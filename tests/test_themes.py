@@ -159,7 +159,18 @@ class TestCli:
         monkeypatch.setattr(sys, "argv", ["trackfetch", *map(str, args)])
         m.main()
 
+    @staticmethod
+    def pin_truecolor(monkeypatch):
+        """Make the emitted escape codes independent of the CI terminal.
+
+        Color depth is auto-detected from COLORTERM/TERM, which differs
+        between a local terminal, GitHub runners and the Nix sandbox.
+        """
+        monkeypatch.setenv("TERM", "xterm-256color")
+        monkeypatch.setenv("COLORTERM", "truecolor")
+
     def test_custom_theme_through_config(self, tmp_path, monkeypatch, capsys):
+        self.pin_truecolor(monkeypatch)
         config = write(
             tmp_path / "trackfetch.ini",
             "[trackfetch]\ncolor = always\ncolor_theme = mine\n",
@@ -175,6 +186,7 @@ class TestCli:
         assert "\x1b[38;2;255;0;0m" in output
 
     def test_explicit_themes_file(self, tmp_path, monkeypatch, capsys):
+        self.pin_truecolor(monkeypatch)
         config = write(tmp_path / "trackfetch.ini", "[trackfetch]\n")
         theme_file = write(
             tmp_path / "custom.ini",
@@ -197,6 +209,7 @@ class TestCli:
         assert "\x1b[38;2;0;255;0m" in capsys.readouterr().out
 
     def test_themes_file_from_config(self, tmp_path, monkeypatch, capsys):
+        self.pin_truecolor(monkeypatch)
         theme_file = write(
             tmp_path / "custom.ini",
             "[mine]\naccent = #0000ff\n",
