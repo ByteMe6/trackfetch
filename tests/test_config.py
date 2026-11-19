@@ -39,7 +39,7 @@ def pipeline(monkeypatch):
 
     monkeypatch.setattr(m.pipeline, "resolve_metadata", fake_resolve_metadata)
     monkeypatch.setattr(m.providers.spotify, "find_spotify_track", lambda sp, a, t: state["track"])
-    monkeypatch.setattr(m.pipeline, "find_youtube_video", lambda a, t: state["video"])
+    monkeypatch.setattr(m.pipeline, "find_youtube_video", lambda a, t, d=None: state["video"])
     monkeypatch.setattr(m.pipeline, "download_audio", fake_download_audio)
     monkeypatch.setattr(m.images, "download_cover", fake_download_cover)
     monkeypatch.setattr(m.providers.spotify, "get_spotify", lambda *a, **k: object())

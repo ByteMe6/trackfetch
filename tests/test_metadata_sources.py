@@ -625,6 +625,16 @@ class TestVocadbPromotion:
 
 
 class TestMatching:
+    def test_cover_by_another_artist_is_rejected(self):
+        cover = {"title": "Гимн Рок-н-ролла", "artist": "Денис Малыхин"}
+
+        assert m.select_best_metadata(
+            [cover], "крик", "гимн рок н рола", 0.6, 0.8
+        ) is None
+
+    def test_artist_similarity_boundary_is_applied(self):
+        assert m.matching.MIN_ARTIST_SIMILARITY == 0.45
+
     def test_exact_match(self):
         candidate = {"title": "One More Time", "artist": "Daft Punk"}
 
@@ -699,6 +709,39 @@ class TestMatching:
 
         assert scored["artist"] == "Daft Punk"
 
+    def test_yo_is_folded_to_ye(self):
+        assert m.normalize("Мёртвый") == m.normalize("Мертвый")
+        assert m.similarity("Мёртвый Анархист", "Мертвый Анархист") == 1.0
+
+    def test_noise_suffixes_are_ignored(self):
+        assert m.normalize("Song (Official Video)") == "song"
+        assert m.normalize("Song [Remastered]") == "song"
+        assert m.normalize("Song (Official Music Video)") == "song"
+        assert m.normalize("Song (Live)") == "song"
+        assert m.normalize("Song feat. Guest") == "song"
+        assert m.normalize("Song (feat. Guest)") == "song"
+
+    def test_swapped_artist_and_title_are_matched(self):
+        candidate = {"title": "One More Time", "artist": "Daft Punk"}
+
+        scored = m.select_best_metadata(
+            [candidate], "One More Time", "Daft Punk", 0.6, 0.8
+        )
+
+        assert scored is not None
+        assert scored["artist"] == "Daft Punk"
+        assert scored["title_score"] == pytest.approx(1.0)
+        assert scored["artist_score"] == pytest.approx(1.0)
+
+    def test_better_of_normal_and_swapped_score_wins(self):
+        candidate = {"title": "One More Time", "artist": "Daft Punk"}
+
+        scored = m.select_best_metadata(
+            [candidate], "Daft Punk", "One More Time", 0.6, 0.8
+        )
+
+        assert scored["score"] == pytest.approx(1.0)
+
 
 class TestProviders:
     def test_itunes_success_and_country(self):
@@ -713,6 +756,7 @@ class TestProviders:
                             "releaseDate": "2001-03-12T00:00:00Z",
                             "trackNumber": 1,
                             "trackId": 123,
+                            "trackTimeMillis": 320400,
                             "artworkUrl100": "https://img/100x100bb.jpg",
                         }
                     ]
@@ -729,10 +773,15 @@ class TestProviders:
         assert candidates[0]["title"] == "One More Time"
         assert candidates[0]["cover_url"] == "https://img/640x640bb.jpg"
         assert candidates[0]["source"] == "itunes"
+        assert candidates[0]["duration"] == 320
         assert session.calls[0]["params"]["country"] == "us"
 
     def test_itunes_custom_country(self):
-        session = FakeSession(FakeResponse({"results": []}))
+        session = FakeSession(
+            FakeResponse({"results": []}),
+            FakeResponse({"results": []}),
+            FakeResponse({"results": []}),
+        )
         runtime = make_runtime(session)
         config = make_config(["itunes"])
         config.providers["itunes"]["country"] = "ua"
@@ -742,7 +791,13 @@ class TestProviders:
         assert session.calls[0]["params"]["country"] == "ua"
 
     def test_itunes_empty_results(self):
-        runtime = make_runtime(FakeSession(FakeResponse({"results": []})))
+        runtime = make_runtime(
+            FakeSession(
+                FakeResponse({"results": []}),
+                FakeResponse({"results": []}),
+                FakeResponse({"results": []}),
+            )
+        )
 
         assert m.itunes_provider(
             runtime, "a", "b", make_config(["itunes"])
@@ -798,6 +853,7 @@ class TestProviders:
                         {
                             "id": 7,
                             "title": "One More Time",
+                            "duration": 320,
                             "artist": {"name": "Daft Punk"},
                             "album": {
                                 "title": "Discovery",
@@ -818,6 +874,7 @@ class TestProviders:
 
         assert candidates[0]["cover_url"] == "https://img/xl.jpg"
         assert candidates[0]["album"] == "Discovery"
+        assert candidates[0]["duration"] == 320
 
     def test_deezer_api_error(self):
         runtime = make_runtime(
@@ -835,6 +892,7 @@ class TestProviders:
                         {
                             "id": "rec-1",
                             "title": "One More Time",
+                            "length": 320400,
                             "artist-credit": [
                                 {"name": "Daft Punk", "joinphrase": ""}
                             ],
@@ -869,6 +927,7 @@ class TestProviders:
 
         assert candidates[0]["album"] == "Discovery"
         assert candidates[0]["release_date"] == "2001"
+        assert candidates[0]["duration"] == 320
         assert candidates[0]["cover_url"] == "https://caa/front.jpg"
         assert len(session.calls) == 2
 
@@ -982,6 +1041,352 @@ class TestProviders:
         assert runtime.health.state("spotify")["cooldown_seconds"] == 600.0
 
 
+class TestDurationHelpers:
+    def test_milliseconds_are_rounded_to_seconds(self):
+        assert m.providers.duration.milliseconds_to_seconds(320400) == 320
+        assert m.providers.duration.milliseconds_to_seconds(320600) == 321
+        assert m.providers.duration.milliseconds_to_seconds("320400") == 320
+
+    def test_milliseconds_ignore_missing_and_invalid_values(self):
+        assert m.providers.duration.milliseconds_to_seconds(None) is None
+        assert m.providers.duration.milliseconds_to_seconds(True) is None
+        assert m.providers.duration.milliseconds_to_seconds("nope") is None
+        assert m.providers.duration.milliseconds_to_seconds(-1000) is None
+
+    def test_seconds_are_rounded_to_whole_seconds(self):
+        assert m.providers.duration.seconds(320) == 320
+        assert m.providers.duration.seconds("320.6") == 321
+
+    def test_seconds_ignore_missing_and_invalid_values(self):
+        assert m.providers.duration.seconds(None) is None
+        assert m.providers.duration.seconds(False) is None
+        assert m.providers.duration.seconds("nope") is None
+        assert m.providers.duration.seconds(-1) is None
+
+
+class TestQueryRelaxation:
+    def test_variants_are_progressive_and_deduplicated(self):
+        assert m.providers.search.query_variants(
+            "КриК", "гимн рок н рола"
+        ) == [
+            "КриК гимн рок н рола",
+            "гимн рок н рола КриК",
+            "гимн рок н рола",
+            "гимн рок н",
+            "гимн рок",
+        ]
+
+    def test_variants_handle_empty_parts(self):
+        assert m.providers.search.query_variants("", "Song") == ["Song"]
+        assert m.providers.search.query_variants("Artist", "") == ["Artist"]
+        assert m.providers.search.query_variants("", "") == []
+
+    def test_short_title_is_not_truncated_below_two_words(self):
+        assert m.providers.search.query_variants("A", "One More") == [
+            "A One More",
+            "One More A",
+            "One More",
+        ]
+
+    def test_strict_match_stops_before_relaxed_queries(self):
+        calls = []
+        candidate = {
+            "title": "One More Time",
+            "artist": "Daft Punk",
+            "source": "deezer",
+            "source_id": 1,
+        }
+
+        def fetch(query):
+            calls.append(query)
+            return [candidate]
+
+        result = m.providers.search.search_variants(
+            fetch,
+            "Daft Punk",
+            "One More Time",
+            make_config(["deezer"]),
+            strict_query="strict",
+        )
+
+        assert result == [candidate]
+        assert calls == ["strict"]
+
+    def test_relaxed_query_runs_after_strict_miss(self):
+        calls = []
+        wrong = {
+            "title": "Nope",
+            "artist": "Nobody",
+            "source": "deezer",
+            "source_id": 1,
+        }
+        right = {
+            "title": "One More Time",
+            "artist": "Daft Punk",
+            "source": "deezer",
+            "source_id": 2,
+        }
+
+        def fetch(query):
+            calls.append(query)
+            return [wrong] if query == "strict" else [right]
+
+        result = m.providers.search.search_variants(
+            fetch,
+            "Daft Punk",
+            "One More Time",
+            make_config(["deezer"]),
+            strict_query="strict",
+        )
+
+        assert result == [right]
+        assert calls == ["strict", "Daft Punk One More Time"]
+
+    def test_all_candidates_are_collected_when_nothing_matches(self):
+        calls = []
+        first = {
+            "title": "Nope",
+            "artist": "Nobody",
+            "source": "deezer",
+            "source_id": 1,
+        }
+        second = {
+            "title": "Other",
+            "artist": "Someone",
+            "source": "deezer",
+            "source_id": 2,
+        }
+
+        def fetch(query):
+            calls.append(query)
+
+            if query == "strict":
+                return [first]
+
+            if query == "Daft Punk One More Time":
+                return [first, second, "not a dict"]
+
+            return []
+
+        result = m.providers.search.search_variants(
+            fetch,
+            "Daft Punk",
+            "One More Time",
+            make_config(["deezer"]),
+            strict_query="strict",
+        )
+
+        assert result == [first, second]
+        assert calls[0] == "strict"
+        assert calls[1] == "Daft Punk One More Time"
+        assert len(calls) == 5
+
+    def test_none_and_non_dict_candidates_are_ignored(self):
+        assert m.providers.search.search_variants(
+            lambda query: None,
+            "A",
+            "B",
+            make_config(["deezer"]),
+        ) == []
+        assert m.providers.search.search_variants(
+            lambda query: ["not a dict"],
+            "A",
+            "B",
+            make_config(["deezer"]),
+        ) == []
+
+    def test_itunes_uses_truncated_title_when_typo_breaks_search(self):
+        session = FakeSession(
+            FakeResponse({"results": []}),
+            FakeResponse({"results": []}),
+            FakeResponse({"results": []}),
+            FakeResponse(
+                {
+                    "results": [
+                        {
+                            "trackName": "Гимн рок-н-ролла",
+                            "artistName": "КриК",
+                            "trackId": 1,
+                        }
+                    ]
+                }
+            ),
+        )
+
+        candidates = m.itunes_provider(
+            make_runtime(session),
+            "КриК",
+            "гимн рок н рола",
+            make_config(["itunes"]),
+        )
+
+        assert candidates[0]["title"] == "Гимн рок-н-ролла"
+        assert session.calls[3]["params"]["term"] == "гимн рок н"
+
+    def test_deezer_runs_free_text_after_strict_miss(self):
+        session = FakeSession(
+            FakeResponse({"data": []}),
+            FakeResponse(
+                {
+                    "data": [
+                        {
+                            "id": 7,
+                            "title": "One More Time",
+                            "artist": {"name": "Daft Punk"},
+                            "album": {"title": "Discovery"},
+                        }
+                    ]
+                }
+            ),
+        )
+
+        candidates = m.deezer_provider(
+            make_runtime(session),
+            "Daft Punk",
+            "One More Time",
+            make_config(["deezer"]),
+        )
+
+        assert candidates[0]["title"] == "One More Time"
+        assert session.calls[0]["params"]["q"] == (
+            'artist:"Daft Punk" track:"One More Time"'
+        )
+        assert session.calls[1]["params"]["q"] == "Daft Punk One More Time"
+
+
+class TestFallbackSources:
+    def _install(self, monkeypatch, results, calls):
+        for name in m.METADATA_PROVIDERS:
+            def provider(runtime, artist, title, config, name=name):
+                calls.append(name)
+                return results.get(name, [])
+
+            monkeypatch.setitem(m.PROVIDER_FUNCTIONS, name, provider)
+
+    def test_unconfigured_free_sources_are_tried_after_configured_miss(
+        self, monkeypatch
+    ):
+        calls = []
+        self._install(
+            monkeypatch,
+            {
+                "musicbrainz": [
+                    {
+                        "title": "One More Time",
+                        "artist": "Daft Punk",
+                        "source": "musicbrainz",
+                    }
+                ]
+            },
+            calls,
+        )
+
+        result = m.resolve_metadata(
+            "Daft Punk",
+            "One More Time",
+            make_config(["itunes"]),
+            make_runtime(),
+        )
+
+        assert result["source"] == "musicbrainz"
+        assert calls == ["itunes", "deezer", "musicbrainz"]
+
+    def test_disabled_fallback_is_not_queried(self, monkeypatch):
+        calls = []
+        self._install(
+            monkeypatch,
+            {
+                "musicbrainz": [
+                    {
+                        "title": "One More Time",
+                        "artist": "Daft Punk",
+                        "source": "musicbrainz",
+                    }
+                ]
+            },
+            calls,
+        )
+
+        result = m.resolve_metadata(
+            "Daft Punk",
+            "One More Time",
+            make_config(["itunes"], disabled=("deezer",)),
+            make_runtime(),
+        )
+
+        assert result["source"] == "musicbrainz"
+        assert calls == ["itunes", "musicbrainz"]
+
+    def test_no_metadata_selection_does_not_use_fallbacks(self, monkeypatch):
+        calls = []
+        self._install(monkeypatch, {}, calls)
+
+        result = m.resolve_metadata(
+            "A",
+            "B",
+            make_config([], none_selected=True),
+            make_runtime(),
+        )
+
+        assert result["source"] == "input"
+        assert calls == []
+
+    def test_configured_provider_is_not_queried_twice(self, monkeypatch):
+        calls = []
+        self._install(
+            monkeypatch,
+            {
+                "musicbrainz": [
+                    {
+                        "title": "One More Time",
+                        "artist": "Daft Punk",
+                        "source": "musicbrainz",
+                    }
+                ]
+            },
+            calls,
+        )
+
+        result = m.resolve_metadata(
+            "Daft Punk",
+            "One More Time",
+            make_config(["deezer"]),
+            make_runtime(),
+        )
+
+        assert result["source"] == "musicbrainz"
+        assert calls == ["deezer", "musicbrainz"]
+
+    def test_cli_disable_sources_blocks_fallbacks(self, monkeypatch):
+        calls = []
+        self._install(monkeypatch, {}, calls)
+        config = m.build_source_config(
+            make_args(
+                metadata_sources="itunes",
+                disable_sources="deezer,musicbrainz",
+            ),
+            {},
+        )
+
+        result = m.resolve_metadata("A", "B", config, make_runtime())
+
+        assert result["source"] == "input"
+        assert calls == ["itunes"]
+
+    def test_config_disabled_fallback_is_not_queried(self, monkeypatch):
+        calls = []
+        self._install(monkeypatch, {}, calls)
+        config = m.build_source_config(
+            make_args(),
+            {"deezer_enabled": "false"},
+        )
+
+        result = m.resolve_metadata("A", "B", config, make_runtime())
+
+        assert result["source"] == "input"
+        assert calls == ["itunes", "musicbrainz"]
+
+
 class TestRateLimiting:
     def test_independent_provider_intervals(self, monkeypatch):
         now = [0.0]
@@ -1065,11 +1470,15 @@ class TestRateLimitPolicy:
         runtime = make_runtime()
         waits = []
         monkeypatch.setattr(runtime.limiter, "wait", waits.append)
-        runtime.session = FakeSession(FakeResponse({"results": []}))
+        runtime.session = FakeSession(
+            FakeResponse({"results": []}),
+            FakeResponse({"results": []}),
+            FakeResponse({"results": []}),
+        )
 
         m.itunes_provider(runtime, "a", "b", make_config(["itunes"]))
 
-        assert waits == ["itunes"]
+        assert waits == ["itunes", "itunes", "itunes"]
 
     def test_youtube_search_is_not_rate_limited(self, monkeypatch):
         sleeps = []
@@ -1143,7 +1552,13 @@ class TestFailureRecovery:
         assert not health.in_cooldown("deezer")
 
     def test_empty_results_do_not_count_as_failures(self, monkeypatch):
-        runtime = make_runtime(FakeSession(FakeResponse({"results": []})))
+        runtime = make_runtime(
+            FakeSession(
+                FakeResponse({"results": []}),
+                FakeResponse({"results": []}),
+                FakeResponse({"results": []}),
+            )
+        )
         config = make_config(["itunes"])
 
         result = m.resolve_metadata("a", "b", config, runtime)
@@ -1235,6 +1650,18 @@ class TestMetadataCache:
 
         assert cache.get("A", "B", "itunes")["source"] == "itunes"
         assert cache.get("A", "B", "deezer")["source"] == "deezer"
+
+    def test_duration_is_cached(self, tmp_path):
+        path = tmp_path / m.CACHE_FILENAME
+        cache = m.MetadataCache(path)
+        cache.set(
+            "A",
+            "B",
+            "itunes",
+            {"title": "B", "artist": "A", "source": "itunes", "duration": 321},
+        )
+
+        assert m.MetadataCache(path).get("A", "B", "itunes")["duration"] == 321
 
     def test_incomplete_result_does_not_overwrite_better_entry(self, tmp_path):
         path = tmp_path / m.CACHE_FILENAME
@@ -1613,7 +2040,7 @@ class TestYoutubeFallback:
         monkeypatch.setattr(
             m.pipeline,
             "find_youtube_video",
-            lambda artist, title: calls.append((artist, title)),
+            lambda artist, title, duration=None: calls.append((artist, title)),
         )
         config = make_config([], youtube=False, none_selected=True)
 
@@ -1638,7 +2065,7 @@ class TestYoutubeFallback:
         monkeypatch.setattr(
             m.pipeline,
             "find_youtube_video",
-            lambda artist, title: calls.append((artist, title)),
+            lambda artist, title, duration=None: calls.append((artist, title)),
         )
         config = m.build_source_config(
             make_args(disable_sources="youtube"),
@@ -1666,7 +2093,7 @@ class TestYoutubeFallback:
         monkeypatch.setattr(
             m.pipeline,
             "find_youtube_video",
-            lambda artist, title: calls.append((artist, title)),
+            lambda artist, title, duration=None: calls.append((artist, title)),
         )
         config = m.build_source_config(
             make_args(),
@@ -1693,7 +2120,7 @@ class TestYoutubeFallback:
         from conftest import FIXTURES
 
         video = {"title": "A - B", "id": "abc"}
-        monkeypatch.setattr(m.pipeline, "find_youtube_video", lambda a, t: video)
+        monkeypatch.setattr(m.pipeline, "find_youtube_video", lambda a, t, d=None: video)
         monkeypatch.setattr(
             m.pipeline,
             "download_audio",
@@ -1785,7 +2212,9 @@ class TestSourceValidation:
 class TestProviderErrorBranches:
     def test_itunes_skips_malformed_items(self):
         session = FakeSession(
-            FakeResponse({"results": ["nope", {"trackId": 1}]})
+            FakeResponse({"results": ["nope", {"trackId": 1}]}),
+            FakeResponse({"results": ["nope", {"trackId": 1}]}),
+            FakeResponse({"results": ["nope", {"trackId": 1}]}),
         )
 
         candidates = m.itunes_provider(
@@ -1808,7 +2237,10 @@ class TestProviderErrorBranches:
 
     def test_deezer_skips_malformed_items(self):
         session = FakeSession(
-            FakeResponse({"data": ["nope", {"noTitle": 1}]})
+            FakeResponse({"data": ["nope", {"noTitle": 1}]}),
+            FakeResponse({"data": ["nope", {"noTitle": 1}]}),
+            FakeResponse({"data": ["nope", {"noTitle": 1}]}),
+            FakeResponse({"data": ["nope", {"noTitle": 1}]}),
         )
 
         candidates = m.deezer_provider(
@@ -1827,7 +2259,10 @@ class TestProviderErrorBranches:
 
     def test_musicbrainz_skips_malformed_items(self):
         session = FakeSession(
-            FakeResponse({"recordings": ["nope", {"id": "x"}]})
+            FakeResponse({"recordings": ["nope", {"id": "x"}]}),
+            FakeResponse({"recordings": ["nope", {"id": "x"}]}),
+            FakeResponse({"recordings": ["nope", {"id": "x"}]}),
+            FakeResponse({"recordings": ["nope", {"id": "x"}]}),
         )
 
         candidates = m.musicbrainz_provider(
@@ -1882,7 +2317,9 @@ class TestProviderErrorBranches:
 
     def test_vocadb_skips_malformed_items(self):
         session = FakeSession(
-            FakeResponse({"items": ["nope", {"id": 1}]})
+            FakeResponse({"items": ["nope", {"id": 1}]}),
+            FakeResponse({"items": ["nope", {"id": 1}]}),
+            FakeResponse({"items": ["nope", {"id": 1}]}),
         )
 
         candidates = m.vocadb_provider(
@@ -1907,7 +2344,7 @@ class TestProviderErrorBranches:
         )
 
         candidates = m.vocadb_provider(
-            make_runtime(session), "a", "b", make_config(["vocadb"])
+            make_runtime(session), "A, B", "Song", make_config(["vocadb"])
         )
 
         assert candidates[0]["artist"] == "A, B"
@@ -2042,6 +2479,27 @@ class TestSpotifyBranches:
             runtime, "a", "b", make_config(["spotify"])
         ) == []
 
+    def test_candidate_includes_duration(self, monkeypatch):
+        track = {
+            "id": "t1",
+            "name": "Song",
+            "duration_ms": 214000,
+            "artists": [{"name": "Artist"}],
+            "album": {"name": "Album", "artists": [], "images": []},
+        }
+        monkeypatch.setattr(
+            m.providers.spotify, "find_spotify_track", lambda *a, **k: track
+        )
+        runtime = make_runtime()
+        runtime.spotify_client = object()
+        runtime.spotify_initialized = True
+
+        candidates = m.spotify_provider(
+            runtime, "Artist", "Song", make_config(["spotify"])
+        )
+
+        assert candidates[0]["duration"] == 214
+
 
 class TestCacheBranches:
     def test_non_dict_json_is_handled(self, tmp_path):
@@ -2081,7 +2539,7 @@ class TestProcessSongDefaults:
                 artist, title
             ),
         )
-        monkeypatch.setattr(m.pipeline, "find_youtube_video", lambda a, t: None)
+        monkeypatch.setattr(m.pipeline, "find_youtube_video", lambda a, t, d=None: None)
 
         ok, reason = m.process_song(
             None,

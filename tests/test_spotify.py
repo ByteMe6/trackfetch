@@ -63,6 +63,7 @@ class TestGetTrackMetadata:
             "album_artist": "Artist",
             "track_number": None,
             "release_date": None,
+            "duration": None,
             "cover_url": None,
         }
 
@@ -83,6 +84,7 @@ class TestGetTrackMetadata:
             "album_artist": "A",
             "track_number": 7,
             "release_date": "1999",
+            "duration": None,
             "cover_url": "big",
         }
 
@@ -92,3 +94,8 @@ class TestGetTrackMetadata:
 
     def test_no_images(self):
         assert m.get_track_metadata(make_track(images=[]), "x", "y")["cover_url"] is None
+
+    def test_duration_is_converted_from_milliseconds(self):
+        track = make_track(duration_ms=320400)
+
+        assert m.get_track_metadata(track, "x", "y")["duration"] == 320

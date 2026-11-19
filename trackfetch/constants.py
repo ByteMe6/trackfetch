@@ -31,7 +31,7 @@ AUDIO_FORMATS = {
     ],
 }
 
-VERSION = "2.2.10"
+VERSION = "2.2.11"
 USER_AGENT = (
     f"trackfetch/{VERSION} "
     "(https://github.com/ByteMe6/trackfetch)"

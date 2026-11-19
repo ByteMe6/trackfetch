@@ -7,6 +7,31 @@ from ..matching import fallback_metadata, select_best_metadata
 from ..runtime import MetadataRuntime
 from .registry import PROVIDER_FUNCTIONS
 
+FALLBACK_METADATA_SOURCES = ("deezer", "musicbrainz")
+
+
+def metadata_sources_for(config: SourceConfig, artist: str, title: str):
+    """Configured providers plus safe free fallbacks.
+
+    Fallbacks are only used after every configured provider missed, and never
+    when the user disabled them or explicitly selected no metadata at all.
+    """
+    sources = effective_metadata_sources(config, artist, title)
+
+    if config.none_selected:
+        return sources
+
+    for name in FALLBACK_METADATA_SOURCES:
+        if name in sources or config.is_enabled(name):
+            continue
+
+        if config.providers[name].get("disabled"):
+            continue
+
+        sources.append(name)
+
+    return sources
+
 
 def cached_metadata(runtime, artist, title, provider, config):
     if runtime.cache is None:
@@ -27,13 +52,16 @@ def cached_metadata(runtime, artist, title, provider, config):
 
 
 def resolve_metadata(artist: str, title: str, config: SourceConfig, runtime):
-    """Return the first suitable metadata result in configured priority order."""
+    """Return the first suitable metadata result in configured priority order.
+
+    Free fallbacks are considered only after every configured provider missed.
+    """
     if runtime is None:
         runtime = MetadataRuntime()
 
     fallback = fallback_metadata(artist, title)
 
-    for provider in effective_metadata_sources(config, artist, title):
+    for provider in metadata_sources_for(config, artist, title):
         if runtime.health.in_cooldown(provider):
             cached = cached_metadata(
                 runtime,

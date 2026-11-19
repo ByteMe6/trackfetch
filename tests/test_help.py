@@ -176,6 +176,20 @@ class TestHelpOutput:
         assert "LYRICS" in help_text
         assert "metadata-cache.json" in help_text
 
+    def test_version_is_documented(self, help_text):
+        assert "-v, --version" in help_text
+        assert "Show the version and exit" in help_text
+
+    @pytest.mark.parametrize("flag", ("-v", "--version"))
+    def test_version_prints_and_exits(self, capsys, flag):
+        from trackfetch.constants import VERSION
+
+        with pytest.raises(SystemExit) as exc:
+            build_parser().parse_args([flag])
+
+        assert exc.value.code == 0
+        assert capsys.readouterr().out.strip() == f"trackfetch {VERSION}"
+
 
 class TestGroups:
     def titles(self, parser):

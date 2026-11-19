@@ -10,6 +10,7 @@ from .. import colors
 from ..config import SourceConfig
 from ..errors import ProviderAuthError, ProviderError
 from ..matching import similarity
+from .duration import milliseconds_to_seconds
 
 
 def spotify_credentials(args=None):
@@ -117,6 +118,7 @@ def get_track_metadata(track, fallback_artist, fallback_title):
             "album_artist": fallback_artist,
             "track_number": None,
             "release_date": None,
+            "duration": None,
             "cover_url": None,
         }
 
@@ -141,6 +143,7 @@ def get_track_metadata(track, fallback_artist, fallback_title):
         "album_artist": album_artist or artist,
         "track_number": track.get("track_number"),
         "release_date": album.get("release_date"),
+        "duration": milliseconds_to_seconds(track.get("duration_ms")),
         "cover_url": images[0]["url"] if images else None,
     }
 
@@ -201,6 +204,7 @@ def spotify_provider(runtime, artist: str, title: str, config: SourceConfig):
             "album_artist": metadata["album_artist"],
             "track_number": metadata["track_number"],
             "release_date": metadata["release_date"],
+            "duration": metadata["duration"],
             "cover_url": metadata["cover_url"],
             "source": "spotify",
             "source_id": track.get("id"),

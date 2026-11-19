@@ -38,6 +38,7 @@ def make_track(
     track_number=3,
     release_date="2001-03-12",
     images=({"url": "https://img/640.jpg"},),
+    duration_ms=None,
 ):
     """Minimal Spotify track object with the fields trackfetch reads."""
     album_artists = artists if album_artists is None else album_artists
@@ -45,6 +46,7 @@ def make_track(
         "name": name,
         "artists": [{"name": a} for a in artists],
         "track_number": track_number,
+        "duration_ms": duration_ms,
         "album": {
             "name": album,
             "artists": [{"name": a} for a in album_artists],

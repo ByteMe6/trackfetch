@@ -52,6 +52,10 @@
 
 `trackfetch --list-sources`
 
+- Show the installed version:
+
+`trackfetch {{[-v|--version]}}`
+
 - Turn color off for clean logs, or force it in a pipe:
 
 `trackfetch {{path/to/songs.txt}} --color {{never|always}}`

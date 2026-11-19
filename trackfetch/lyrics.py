@@ -22,6 +22,7 @@ from .constants import (
 )
 from .errors import ProviderError
 from .matching import score_metadata
+from .providers.search import query_variants
 
 
 def lrc_fraction_to_ms(fraction: str) -> int:
@@ -61,8 +62,13 @@ def parse_synced_lyrics(text: str):
     return entries
 
 
-def select_lyrics(results, artist: str, title: str):
-    """Choose the best matching lyrics result and normalize its fields."""
+def select_lyrics(results, artist: str, title: str, duration=None):
+    """Choose the best matching lyrics result and normalize its fields.
+
+    LRCLIB results are ranked locally because a relaxed query may return
+    covers, live versions and unrelated songs. A duration within three
+    seconds is a strong signal, and timed lyrics are preferred on ties.
+    """
     best = None
 
     for item in results or []:
@@ -84,6 +90,23 @@ def select_lyrics(results, artist: str, title: str):
         if scored is None:
             continue
 
+        score = scored["score"]
+        item_duration = item.get("duration")
+
+        if duration is not None and item_duration is not None:
+            try:
+                difference = abs(float(item_duration) - float(duration))
+
+            except (TypeError, ValueError):
+                difference = None
+
+            if difference is not None:
+                if difference <= 3:
+                    score += 0.05
+
+                elif difference <= 10:
+                    score += 0.02
+
         plain = (item.get("plainLyrics") or "").strip()
         synced = (item.get("syncedLyrics") or "").strip()
         synced_entries = parse_synced_lyrics(synced)
@@ -99,38 +122,24 @@ def select_lyrics(results, artist: str, title: str):
         lyrics = {
             "plain": plain or None,
             "synced": synced or None,
-            "score": scored["score"],
+            "score": score,
         }
 
         if best is None or lyrics["score"] > best["score"]:
             best = lyrics
 
+        elif lyrics["score"] == best["score"]:
+            if lyrics["synced"] and not best["synced"]:
+                best = lyrics
+
     return best
 
 
-def fetch_lyrics(
-    artist: str,
-    title: str,
-    runtime=None,
-    timeout: float = LYRICS_TIMEOUT,
-):
-    """Look up lyrics on LRCLIB, which returns plain and timed lyrics.
-
-    Missing lyrics are a normal result, not an error. Transport and server
-    errors raise ProviderError so the caller can report them without failing
-    the download.
-    """
-    params = {
-        "artist_name": artist,
-        "track_name": title,
-    }
-
-    headers = {"User-Agent": USER_AGENT}
-
+def _lyrics_request(session, params, headers, timeout):
+    """Run one LRCLIB search and return its result list."""
     try:
-        if runtime is not None:
-            runtime.limiter.wait("lrclib")
-            response = runtime.session.get(
+        if session is not None:
+            response = session.get(
                 LRCLIB_SEARCH_URL,
                 params=params,
                 headers=headers,
@@ -150,7 +159,7 @@ def fetch_lyrics(
     status = getattr(response, "status_code", 200)
 
     if status == 404:
-        return None
+        return []
 
     if status >= 400:
         raise ProviderError(f"lyrics source returned HTTP {status}")
@@ -164,7 +173,69 @@ def fetch_lyrics(
     if isinstance(results, dict):
         results = results.get("data") or []
 
-    return select_lyrics(results, artist, title)
+    return results
+
+
+def lyrics_queries(artist: str, title: str):
+    """Return LRCLIB search parameter sets, most specific first.
+
+    LRCLIB requires every field to match, so a typo in the artist or title
+    returns nothing. Searching by track name alone, then by relaxed free text,
+    gives local scoring a chance to find the right entry.
+    """
+    attempts = []
+
+    def add(params):
+        if params and params not in attempts:
+            attempts.append(params)
+
+    add({"track_name": title} if title else None)
+
+    for variant in query_variants(artist, title):
+        add({"q": variant})
+
+    return attempts
+
+
+def fetch_lyrics(
+    artist: str,
+    title: str,
+    runtime=None,
+    timeout: float = LYRICS_TIMEOUT,
+    duration=None,
+):
+    """Look up lyrics on LRCLIB, which returns plain and timed lyrics.
+
+    Missing lyrics are a normal result, not an error. Transport and server
+    errors raise ProviderError so the caller can report them without failing
+    the download.
+    """
+    headers = {"User-Agent": USER_AGENT}
+    session = runtime.session if runtime is not None else None
+    best = None
+
+    for params in lyrics_queries(artist, title):
+        if runtime is not None:
+            runtime.limiter.wait("lrclib")
+
+        results = _lyrics_request(session, params, headers, timeout)
+        selected = select_lyrics(results, artist, title, duration)
+
+        if selected is None:
+            continue
+
+        if best is None or selected["score"] > best["score"]:
+            best = selected
+
+        elif selected["score"] == best["score"]:
+            if selected.get("synced") and not best.get("synced"):
+                best = selected
+
+        # Timed lyrics are the best possible outcome for this track.
+        if best.get("synced"):
+            break
+
+    return best
 
 
 def split_lyrics(lyrics):

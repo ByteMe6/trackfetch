@@ -25,8 +25,10 @@ trackfetch/
 │   ├── deezer.py        Deezer Search API
 │   ├── musicbrainz.py   MusicBrainz + Cover Art Archive
 │   ├── vocadb.py        VocaDB
+│   ├── search.py        Shared query relaxation and candidate deduplication
+│   ├── duration.py      Millisecond/second duration normalization
 │   ├── registry.py      name -> provider function
-│   └── resolver.py      Priority, cooldowns, cache-aware resolution
+│   └── resolver.py      Priority, cooldowns, cache-aware resolution and fallbacks
 ├── youtube.py           Search, scoring and yt-dlp audio download
 ├── images.py            Cover detection, download, Pillow normalization and fallback chain
 ├── lyrics.py            LRCLIB lookup, LRC parsing and sidecar writing

@@ -3,6 +3,7 @@
 
 import json
 import subprocess
+import unicodedata
 from pathlib import Path
 
 from . import colors
@@ -91,24 +92,41 @@ def score_youtube_result(
     video,
     artist: str,
     title: str,
+    duration=None,
 ):
     video_title = video.get("title", "")
 
     title_score = similarity(title, video_title)
-
     artist_score = similarity(artist, video_title)
+
+    # Many videos are "Artist - Song" or "Artist Song (Official Video)". When
+    # the normalized title starts with the artist, that is a strong artist
+    # signal, and the title is compared with the leftover words. A channel
+    # name like "Metal Family “Artist - Song»" does not start with the artist,
+    # so it keeps the whole-title comparison and is not inflated.
+    normalized_video = normalize(video_title)
+    normalized_artist = normalize(artist)
+
+    if normalized_artist and normalized_video.startswith(normalized_artist):
+        remainder = normalized_video[len(normalized_artist):].strip(" -")
+
+        if remainder:
+            artist_score = 1.0
+            title_score = max(title_score, similarity(title, remainder))
 
     score = (
         title_score * 0.70
         + artist_score * 0.30
     )
 
-    normalized_video = normalize(video_title)
+    # Noise stripping is for matching. Bonus and penalty markers still need
+    # to see the original words, including ones inside brackets.
+    detected_video = unicodedata.normalize("NFC", video_title).lower()
 
-    if "official audio" in normalized_video:
+    if "official audio" in detected_video:
         score += 0.08
 
-    if "audio" in normalized_video:
+    if "audio" in detected_video:
         score += 0.03
 
     bad_words = [
@@ -123,13 +141,29 @@ def score_youtube_result(
     ]
 
     for word in bad_words:
-        if word in normalized_video:
+        if word in detected_video:
             score -= 0.20
+
+    video_duration = video.get("duration")
+
+    if duration is not None and video_duration is not None:
+        try:
+            difference = abs(float(video_duration) - float(duration))
+
+        except (TypeError, ValueError):
+            difference = None
+
+        if difference is not None:
+            if difference <= 3:
+                score += 0.05
+
+            elif difference <= 10:
+                score += 0.02
 
     return score
 
 
-def find_youtube_video(artist: str, title: str):
+def find_youtube_video(artist: str, title: str, duration=None):
     query = f"{artist} {title}"
 
     print(colors.muted(f"Searching YouTube: {query}"))
@@ -147,6 +181,7 @@ def find_youtube_video(artist: str, title: str):
             video,
             artist,
             title,
+            duration,
         )
 
         print(

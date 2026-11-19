@@ -4,15 +4,17 @@
 from ..config import SourceConfig
 from ..errors import ProviderError
 from ..runtime import request_json
+from .duration import seconds
+from .search import search_variants
 
 
-def deezer_provider(runtime, artist: str, title: str, config: SourceConfig):
+def deezer_candidates(runtime, query: str):
     data = request_json(
         runtime,
         "deezer",
         "https://api.deezer.com/search",
         params={
-            "q": f'artist:"{artist}" track:"{title}"',
+            "q": query,
             "limit": 25,
         },
     )
@@ -48,6 +50,7 @@ def deezer_provider(runtime, artist: str, title: str, config: SourceConfig):
                 "album_artist": album_artist or artist_name,
                 "track_number": None,
                 "release_date": item.get("release_date"),
+                "duration": seconds(item.get("duration")),
                 "cover_url": (
                     album.get("cover_xl")
                     or album.get("cover_big")
@@ -60,3 +63,13 @@ def deezer_provider(runtime, artist: str, title: str, config: SourceConfig):
         )
 
     return candidates
+
+
+def deezer_provider(runtime, artist: str, title: str, config: SourceConfig):
+    return search_variants(
+        lambda query: deezer_candidates(runtime, query),
+        artist,
+        title,
+        config,
+        strict_query=f'artist:"{artist}" track:"{title}"',
+    )

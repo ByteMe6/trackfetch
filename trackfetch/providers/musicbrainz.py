@@ -5,6 +5,8 @@ from ..config import SourceConfig
 from ..constants import USER_AGENT
 from ..errors import ProviderAuthError, ProviderError
 from ..runtime import request_json
+from .duration import milliseconds_to_seconds
+from .search import search_variants
 
 
 def musicbrainz_artist(recording) -> str:
@@ -75,13 +77,13 @@ def cover_art_archive_url(runtime, release_id, config: SourceConfig):
     return url
 
 
-def musicbrainz_provider(runtime, artist: str, title: str, config: SourceConfig):
+def musicbrainz_candidates(runtime, query: str, config: SourceConfig):
     data = request_json(
         runtime,
         "musicbrainz",
         "https://musicbrainz.org/ws/2/recording",
         params={
-            "query": f'artist:"{artist}" AND recording:"{title}"',
+            "query": query,
             "fmt": "json",
             "limit": 10,
         },
@@ -120,6 +122,7 @@ def musicbrainz_provider(runtime, artist: str, title: str, config: SourceConfig)
                 "album_artist": musicbrainz_artist(recording),
                 "track_number": None,
                 "release_date": release_date,
+                "duration": milliseconds_to_seconds(recording.get("length")),
                 "cover_url": cover_art_archive_url(
                     runtime,
                     release_id,
@@ -131,3 +134,13 @@ def musicbrainz_provider(runtime, artist: str, title: str, config: SourceConfig)
         )
 
     return candidates
+
+
+def musicbrainz_provider(runtime, artist: str, title: str, config: SourceConfig):
+    return search_variants(
+        lambda query: musicbrainz_candidates(runtime, query, config),
+        artist,
+        title,
+        config,
+        strict_query=f'artist:"{artist}" AND recording:"{title}"',
+    )

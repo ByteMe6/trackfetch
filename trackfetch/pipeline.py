@@ -92,6 +92,7 @@ def process_song(
     video = find_youtube_video(
         metadata["artist"],
         metadata["title"],
+        metadata.get("duration"),
     )
 
     if not video:
@@ -154,6 +155,7 @@ def process_song(
                     metadata["artist"],
                     metadata["title"],
                     runtime,
+                    duration=metadata.get("duration"),
                 )
 
             except Exception as error:
@@ -165,16 +167,23 @@ def process_song(
 
             if lyrics:
                 timed = bool(lyrics.get("synced"))
-                kinds = "plain + timed" if timed else "plain"
-                place = (
-                    "sidecar + tags"
-                    if lyrics_type == "sidecar" and timed
-                    else "embedded"
-                )
-                print(
-                    f"{colors.label('Lyrics:')} "
-                    f"{colors.success(f'{place} ({kinds})')}"
-                )
+
+                if timed:
+                    place = (
+                        "sidecar + tags"
+                        if lyrics_type == "sidecar"
+                        else "embedded"
+                    )
+                    print(
+                        f"{colors.label('Lyrics:')} "
+                        f"{colors.success(f'synced ({place})')}"
+                    )
+
+                else:
+                    print(
+                        f"{colors.label('Lyrics:')} "
+                        f"{colors.muted('plain only (no synced version)')}"
+                    )
 
             elif not lyrics_error:
                 print(f"{colors.label('Lyrics:')} {colors.muted('not found')}")

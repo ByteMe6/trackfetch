@@ -5,10 +5,38 @@ import re
 import unicodedata
 from difflib import SequenceMatcher
 
+NOISE_BRACKETS_RE = re.compile(
+    r"[\(\[]\s*(?:"
+    r"official\s+(?:music\s+)?video"
+    r"|official\s+audio"
+    r"|lyric\s+video"
+    r"|lyrics?"
+    r"|audio"
+    r"|video"
+    r"|visuali[sz]er"
+    r"|remaster(?:ed)?"
+    r"|live"
+    r"|radio\s+edit"
+    r"|extended\s+mix"
+    r"|feat\.?\s+[^\)\]]*"
+    r")\s*[\)\]]",
+    re.IGNORECASE,
+)
+FEAT_RE = re.compile(r"\s+(?:feat\.?|featuring)\s+.*$", re.IGNORECASE)
+
+# A metadata candidate whose artist barely resembles the input is usually a
+# cover or a same-title song by another act. Keeping the user's own artist and
+# title beats downloading the wrong track.
+MIN_ARTIST_SIMILARITY = 0.45
+
 
 def normalize(text: str) -> str:
     # NFC keeps meaningful Unicode characters (CJK, accented letters) intact.
     text = unicodedata.normalize("NFC", text).lower()
+    # Russian ё and е are the same letter for search and matching purposes.
+    text = text.replace("ё", "е")
+    text = NOISE_BRACKETS_RE.sub(" ", text)
+    text = FEAT_RE.sub(" ", text)
     text = re.sub(r"[^\w\s]", " ", text)
     text = re.sub(r"\s+", " ", text)
     return text.strip()
@@ -56,10 +84,19 @@ def score_metadata(
     if title_score < title_threshold:
         return None
 
+    candidate_artist = candidate.get("artist") or ""
     artist_score = artist_similarity(
         input_artist,
-        candidate.get("artist") or "",
+        candidate_artist,
     )
+
+    # A close title alone must not turn a cover or an unrelated act into the
+    # track. When both sides name an artist, they have to be at least roughly
+    # the same, otherwise keeping the user's own artist/title is better.
+    if input_artist and candidate_artist:
+        if artist_score < MIN_ARTIST_SIMILARITY:
+            return None
+
     overall = title_score * 0.70 + artist_score * 0.30
 
     if overall < match_threshold:
@@ -94,12 +131,20 @@ def select_best_metadata(
             match_threshold,
             title_threshold,
         )
+        swapped = score_metadata(
+            input_title,
+            input_artist,
+            candidate,
+            match_threshold,
+            title_threshold,
+        )
 
-        if scored is None:
-            continue
+        for result in (scored, swapped):
+            if result is None:
+                continue
 
-        if best is None or scored["score"] > best["score"]:
-            best = scored
+            if best is None or result["score"] > best["score"]:
+                best = result
 
     return best
 
@@ -112,6 +157,7 @@ def fallback_metadata(artist: str, title: str) -> dict:
         "album_artist": artist,
         "track_number": None,
         "release_date": None,
+        "duration": None,
         "cover_url": None,
         "source": "input",
         "source_id": None,

@@ -4,6 +4,7 @@
 from ..config import SourceConfig
 from ..errors import ProviderError
 from ..runtime import request_json
+from .search import search_variants
 
 
 def absolute_vocadb_url(url):
@@ -43,13 +44,13 @@ def vocadb_picture_url(item, album=None):
     return None
 
 
-def vocadb_provider(runtime, artist: str, title: str, config: SourceConfig):
+def vocadb_candidates(runtime, query: str, config: SourceConfig):
     data = request_json(
         runtime,
         "vocadb",
         "https://vocadb.net/api/songs",
         params={
-            "query": f"{artist} {title}",
+            "query": query,
             "nameMatchMode": "Auto",
             "maxResults": 20,
             "contentType": "Song",
@@ -98,3 +99,12 @@ def vocadb_provider(runtime, artist: str, title: str, config: SourceConfig):
         )
 
     return candidates
+
+
+def vocadb_provider(runtime, artist: str, title: str, config: SourceConfig):
+    return search_variants(
+        lambda query: vocadb_candidates(runtime, query, config),
+        artist,
+        title,
+        config,
+    )

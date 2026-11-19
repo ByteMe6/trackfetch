@@ -184,7 +184,7 @@ trackfetch "My Playlist.txt" -o ~/Music/"My Playlist"
 ## Usage
 
 ```text
-trackfetch [-h] [--track ARTIST - TITLE ...] [-o OUTPUT] [--config CONFIG] [-f {mp3,m4a,opus}] [--title-only] [--delay DELAY] [-s SOURCES] [--disable-sources SOURCES] [--provider-opt NAME.KEY=VALUE] [--match-threshold SCORE] [--title-threshold SCORE] [--list-sources] [--spotify-client-id ID] [--spotify-client-secret SECRET] [--no-logs] [--color {auto,always,never}] [--color-theme THEME] [--themes-file PATH] [--lyrics | --no-lyrics] [--lyrics-type {inline,sidecar,plain}] [INPUT ...]
+trackfetch [-h] [-v] [--track ARTIST - TITLE ...] [-o OUTPUT] [--config CONFIG] [-f {mp3,m4a,opus}] [--title-only] [--delay DELAY] [-s SOURCES] [--disable-sources SOURCES] [--provider-opt NAME.KEY=VALUE] [--match-threshold SCORE] [--title-threshold SCORE] [--list-sources] [--spotify-client-id ID] [--spotify-client-secret SECRET] [--no-logs] [--color {auto,always,never}] [--color-theme THEME] [--themes-file PATH] [--lyrics | --no-lyrics] [--lyrics-type {inline,sidecar,plain}] [INPUT ...]
 ```
 
 | Option | Default | What it does |
@@ -192,6 +192,7 @@ trackfetch [-h] [--track ARTIST - TITLE ...] [-o OUTPUT] [--config CONFIG] [-f {
 | `INPUT` | optional | Text file with one `Artist - Title` per line, or an inline `Artist - Title` track. Can also be set in the [config file](#configuration-file). |
 | `--track` | — | Track to download inline, `Artist - Title`. Can be given several times. |
 | `-o`, `--output` | current directory | Folder to save the files in. It's created if it doesn't exist. |
+| `-v`, `--version` | — | Show the installed version and exit. |
 | `--config` | auto-detected | Path to a [config file](#configuration-file). |
 | `-f`, `--format` | `mp3` | Audio format: `mp3`, `m4a` or `opus`. See [Audio formats](#audio-formats). |
 | `--title-only` | off | Name files `Title.m4a` instead of `Artist - Title.m4a` |
@@ -317,6 +318,18 @@ that run: `-s deezer` enables Deezer even if the config disables it, while
 numbers from `0.0` to `1.0`; invalid values stop with an error instead of being
 silently clamped.
 
+Search survives typos, different casing, missing hyphens and `ё`/`е` spelling
+differences. Every provider first tries its precise query. If nothing matches,
+trackfetch retries with looser free-text queries: `artist title`, then
+`title artist`, then the title alone, then the title without its trailing words.
+The same scoring thresholds decide when to stop, so a relaxed query cannot
+sneak in an unrelated song.
+
+After every configured provider misses, trackfetch also tries two free fallback
+sources, `deezer` and then `musicbrainz`. Fallbacks are skipped when the user
+disabled them with `--disable-sources` or the config file, and when metadata is
+turned off completely with `-s none`.
+
 ```bash
 trackfetch songs.txt -s deezer,itunes,musicbrainz,vocadb
 trackfetch songs.txt -s none                       # no metadata, YouTube audio only
@@ -338,8 +351,9 @@ provider is retried after the cooldown and returns to its configured priority
 when it recovers.
 
 Metadata is cached per provider in `metadata-cache.json` in the output
-directory. A lower-priority cached result never prevents a higher-priority
-provider from being retried after recovery.
+directory. Cached entries also keep the track duration, which is used later for
+the YouTube and lyrics matching. A lower-priority cached result never prevents
+a higher-priority provider from being retried after recovery.
 
 Artwork is identified by its actual bytes, not by the URL or the HTTP
 `Content-Type` header. JPEG, PNG, GIF and WebP keep their real extension and
@@ -378,6 +392,16 @@ The source is LRCLIB, which needs no API key. Lyrics embedding is enabled by
 default for all three formats and can be turned off with `--no-lyrics` or
 `lyrics_enabled = false` in the config file. The placement can also be set with
 `lyrics_type = inline|sidecar|plain`.
+
+LRCLIB is searched by track name first, without the artist, then with looser
+free-text queries (the same relaxation used for metadata). Results are ranked
+locally by title, artist and duration, and a version within a few seconds of
+the real track length wins. When two results are equally good, the one with
+timed lyrics is preferred. A typical run prints one of:
+
+- `Lyrics: synced (embedded)` or `Lyrics: synced (sidecar + tags)`
+- `Lyrics: plain only (no synced version)`
+- `Lyrics: not found`
 
 Missing lyrics, a timeout or an HTTP error never fails the download. The file
 is still saved with its usual metadata. If a file already contains lyrics and
@@ -565,7 +589,7 @@ A [tldr](https://tldr.sh/) page is in [`docs/tldr/trackfetch.md`](https://github
 
 ## How it works
 
-1. **Find the metadata.** trackfetch queries the configured providers in priority order. Every result is scored by fuzzy similarity, 70% title and 30% artist. Both the overall `match_threshold` and the `title_threshold` must pass, so an unrelated result is rejected instead of being used. The winning result supplies the title, artists, album details, release date and artwork.
+1. **Find the metadata.** trackfetch queries the configured providers in priority order. Every result is scored by fuzzy similarity, 70% title and 30% artist. Both the overall `match_threshold` and the `title_threshold` must pass, so an unrelated result is rejected instead of being used. If every query misses, provider searches are retried with looser phrasing, and the configured providers are followed by the `deezer` and `musicbrainz` fallbacks. The winning result supplies the title, artists, album details, release date, duration and artwork.
 2. **Find the audio on YouTube.** It searches YouTube for the official artist and title and scores the top five results:
 
    | Signal | Effect on the score |
@@ -574,6 +598,8 @@ A [tldr](https://tldr.sh/) page is in [`docs/tldr/trackfetch.md`](https://github
    | Similarity to the artist | × 0.30 |
    | `official audio` in the video title | +0.08 |
    | `audio` in the video title | +0.03 |
+   | Duration within 3 seconds of the metadata duration | +0.05 |
+   | Duration within 10 seconds | +0.02 |
    | `cover`, `karaoke`, `караоке`, `nightcore`, `sped up`, `slowed`, `remix`, `reaction` | −0.20 each |
 
 3. **Download.** yt-dlp downloads only the winning video and converts it to the chosen format. `m4a` and `opus` keep YouTube's original audio, `mp3` re-encodes it.

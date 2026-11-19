@@ -64,17 +64,21 @@ class FakeResponse:
 
 
 class FakeSession:
-    def __init__(self, response):
-        self.response = response
+    def __init__(self, *responses):
+        self.responses = list(responses)
         self.calls = []
 
     def get(self, url, **kwargs):
         self.calls.append({"url": url, **kwargs})
-        return self.response
+
+        if len(self.responses) == 1:
+            return self.responses[0]
+
+        return self.responses.pop(0)
 
 
-def make_runtime(response):
-    session = FakeSession(response)
+def make_runtime(*responses):
+    session = FakeSession(*responses)
     runtime = m.MetadataRuntime(
         session=session,
         limiter=m.RateLimiter({"lrclib": 0.0}),
@@ -92,6 +96,9 @@ class TestParseSyncedLyrics:
 
     def test_one_digit_fraction_means_tenths(self):
         assert m.parse_synced_lyrics("[00:01.5]Line") == [("Line", 1500)]
+
+    def test_empty_fraction_is_zero(self):
+        assert m.lrc_fraction_to_ms("") == 0
 
     def test_multiple_timestamps_for_one_line(self):
         assert m.parse_synced_lyrics("[00:01.00][00:02.00]Chorus") == [
@@ -180,6 +187,110 @@ class TestSelectLyrics:
 
         assert m.select_lyrics(results, "Artist", "Song") is None
 
+    def test_near_duration_is_preferred(self):
+        results = [
+            {
+                "trackName": "Song",
+                "artistName": "Artist",
+                "duration": 328,
+                "plainLyrics": "near",
+            },
+            {
+                "trackName": "Song",
+                "artistName": "Artist",
+                "duration": 400,
+                "plainLyrics": "far",
+            },
+        ]
+
+        lyrics = m.select_lyrics(results, "Artist", "Song", duration=320)
+
+        assert lyrics["plain"] == "near"
+
+    def test_invalid_durations_are_ignored(self):
+        results = [
+            {
+                "trackName": "Song",
+                "artistName": "Artist",
+                "duration": "nope",
+                "plainLyrics": "bad item",
+            },
+            {
+                "trackName": "Song",
+                "artistName": "Artist",
+                "duration": 320,
+                "plainLyrics": "good item",
+            },
+        ]
+
+        lyrics = m.select_lyrics(results, "Artist", "Song", duration=320)
+
+        assert lyrics["plain"] == "good item"
+
+    def test_invalid_target_duration_is_ignored(self):
+        results = [
+            {
+                "trackName": "Song",
+                "artistName": "Artist",
+                "duration": 320,
+                "plainLyrics": "Words",
+            }
+        ]
+
+        lyrics = m.select_lyrics(results, "Artist", "Song", duration="bad")
+
+        assert lyrics["plain"] == "Words"
+
+    def test_synced_version_wins_a_tie(self):
+        results = [
+            {
+                "trackName": "Song",
+                "artistName": "Artist",
+                "plainLyrics": "plain",
+            },
+            {
+                "trackName": "Song",
+                "artistName": "Artist",
+                "plainLyrics": "timed",
+                "syncedLyrics": "[00:01.00]timed",
+            },
+        ]
+
+        lyrics = m.select_lyrics(results, "Artist", "Song")
+
+        assert lyrics["plain"] == "timed"
+        assert lyrics["synced"]
+
+    def test_empty_result_is_ignored(self):
+        results = [
+            {
+                "trackName": "Song",
+                "artistName": "Artist",
+                "plainLyrics": "   ",
+                "syncedLyrics": "",
+            }
+        ]
+
+        assert m.select_lyrics(results, "Artist", "Song") is None
+
+
+class TestSplitLyrics:
+    def test_timed_only_lyrics_derive_plain_text(self):
+        plain, synced_entries = m.split_lyrics(
+            {"synced": "[00:01.00]One\n[00:02.00]Two"}
+        )
+
+        assert plain == "One\nTwo"
+        assert synced_entries == [("One", 1000), ("Two", 2000)]
+
+    def test_existing_plain_text_is_kept(self):
+        plain, synced_entries = m.split_lyrics(
+            {"plain": "Words", "synced": "[00:01.00]Words"}
+        )
+
+        assert plain == "Words"
+        assert synced_entries == [("Words", 1000)]
+
 
 class TestFetchLyrics:
     def test_returns_matching_lyrics(self):
@@ -198,11 +309,109 @@ class TestFetchLyrics:
         lyrics = m.fetch_lyrics("Artist", "Song", runtime)
 
         assert lyrics["plain"] == "Words"
-        assert session.calls[0]["params"] == {
-            "artist_name": "Artist",
-            "track_name": "Song",
-        }
+        assert session.calls[0]["params"] == {"track_name": "Song"}
         assert session.calls[0]["url"] == m.LRCLIB_SEARCH_URL
+
+    def test_queries_are_progressive_and_prefer_strict_title(self):
+        assert m.lyrics_queries("КриК", "гимн рок н рола") == [
+            {"track_name": "гимн рок н рола"},
+            {"q": "КриК гимн рок н рола"},
+            {"q": "гимн рок н рола КриК"},
+            {"q": "гимн рок н рола"},
+            {"q": "гимн рок н"},
+            {"q": "гимн рок"},
+        ]
+
+    def test_empty_title_skips_empty_track_name_query(self):
+        assert {"track_name": ""} not in m.lyrics_queries("Artist", "")
+        assert m.lyrics_queries("Artist", "") == [{"q": "Artist"}]
+
+    def test_stops_after_synced_result(self):
+        synced = FakeResponse(
+            [
+                {
+                    "trackName": "Song",
+                    "artistName": "Artist",
+                    "plainLyrics": "Words",
+                    "syncedLyrics": "[00:01.00]Words",
+                }
+            ]
+        )
+        runtime, session = make_runtime(synced)
+
+        lyrics = m.fetch_lyrics("Artist", "Song", runtime)
+
+        assert lyrics["synced"]
+        assert len(session.calls) == 1
+
+    def test_relaxed_query_finds_typo_title(self):
+        empty = FakeResponse([])
+        found = FakeResponse(
+            [
+                {
+                    "trackName": "Гимн рок-н-ролла",
+                    "artistName": "КриК",
+                    "plainLyrics": "Строки",
+                    "syncedLyrics": "[00:01.00]Строки",
+                }
+            ]
+        )
+        runtime, session = make_runtime(empty, empty, empty, empty, found)
+
+        lyrics = m.fetch_lyrics("КриК", "гимн рок н рола", runtime)
+
+        assert lyrics["plain"] == "Строки"
+        assert session.calls[-1]["params"] == {"q": "гимн рок н"}
+
+    def test_plain_result_continues_looking_for_synced(self):
+        plain = FakeResponse(
+            [
+                {
+                    "trackName": "Song",
+                    "artistName": "Artist",
+                    "plainLyrics": "Words",
+                }
+            ]
+        )
+        synced = FakeResponse(
+            [
+                {
+                    "trackName": "Song",
+                    "artistName": "Artist",
+                    "plainLyrics": "Words",
+                    "syncedLyrics": "[00:01.00]Words",
+                }
+            ]
+        )
+        runtime, session = make_runtime(plain, synced)
+
+        lyrics = m.fetch_lyrics("Artist", "Song", runtime)
+
+        assert lyrics["synced"]
+        assert len(session.calls) == 2
+
+    def test_duration_prefers_closest_result(self):
+        results = FakeResponse(
+            [
+                {
+                    "trackName": "Song",
+                    "artistName": "Artist",
+                    "duration": 200,
+                    "plainLyrics": "wrong length",
+                },
+                {
+                    "trackName": "Song",
+                    "artistName": "Artist",
+                    "duration": 321,
+                    "plainLyrics": "right length",
+                },
+            ]
+        )
+        runtime, _ = make_runtime(results)
+
+        lyrics = m.fetch_lyrics("Artist", "Song", runtime, duration=320)
+
+        assert lyrics["plain"] == "right length"
 
     def test_404_means_no_lyrics(self):
         runtime, _ = make_runtime(FakeResponse(status_code=404))
@@ -222,6 +431,53 @@ class TestFetchLyrics:
 
         with pytest.raises(m.ProviderError, match="invalid JSON"):
             m.fetch_lyrics("Artist", "Song", runtime=runtime)
+
+    def test_data_wrapper_is_unwrapped(self):
+        runtime, _ = make_runtime(
+            FakeResponse(
+                {
+                    "data": [
+                        {
+                            "trackName": "Song",
+                            "artistName": "Artist",
+                            "plainLyrics": "Words",
+                        }
+                    ]
+                }
+            )
+        )
+
+        assert m.fetch_lyrics("Artist", "Song", runtime)["plain"] == "Words"
+
+    def test_without_runtime_uses_requests(self, monkeypatch):
+        calls = []
+        response = FakeResponse(
+            [
+                {
+                    "trackName": "Song",
+                    "artistName": "Artist",
+                    "plainLyrics": "Words",
+                }
+            ]
+        )
+
+        def fake_get(url, **kwargs):
+            calls.append(url)
+            return response
+
+        monkeypatch.setattr(m.lyrics.requests, "get", fake_get)
+
+        assert m.fetch_lyrics("Artist", "Song")["plain"] == "Words"
+        assert calls[0] == m.LRCLIB_SEARCH_URL
+
+    def test_transport_error_without_runtime(self, monkeypatch):
+        def fake_get(url, **kwargs):
+            raise m.lyrics.requests.ConnectionError("offline")
+
+        monkeypatch.setattr(m.lyrics.requests, "get", fake_get)
+
+        with pytest.raises(m.ProviderError, match="lyrics request failed"):
+            m.fetch_lyrics("Artist", "Song")
 
 
 class TestMp3Lyrics:

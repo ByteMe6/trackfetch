@@ -21,6 +21,7 @@ from .constants import (
     LYRICS_MIN_INTERVAL,
     LYRICS_TYPES,
     METADATA_PROVIDERS,
+    VERSION,
 )
 from .files import append_line, parse_song, read_done, read_song_file
 from .helpfmt import TrackFetchHelpFormatter
@@ -207,7 +208,8 @@ def build_parser():
         help=(
             "Comma-separated metadata priority, for example "
             "'deezer,itunes,musicbrainz' or 'none' "
-            "(default: itunes)"
+            "(default: itunes). If every source misses, free fallbacks "
+            "deezer and musicbrainz are tried unless disabled"
         ),
     )
 
@@ -278,6 +280,14 @@ def build_parser():
     )
 
     behavior_group.add_argument(
+        "-v",
+        "--version",
+        action="version",
+        version=f"trackfetch {VERSION}",
+        help="Show the version and exit",
+    )
+
+    behavior_group.add_argument(
         "--config",
         type=Path,
         default=None,
@@ -311,7 +321,8 @@ def build_parser():
         dest="lyrics_enabled",
         help=(
             "Embed lyrics from LRCLIB into the tags: ID3 USLT/SYLT for MP3, "
-            "©lyr for M4A, LYRICS for Opus (default: on)"
+            "©lyr for M4A, LYRICS for Opus. Searches by title, then relaxed "
+            "queries, and ranks by title, artist and duration (default: on)"
         ),
     )
 

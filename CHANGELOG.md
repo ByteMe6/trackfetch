@@ -6,11 +6,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [2.2.11] - 2026-11-19
+
 ### Added
+- `-v` / `--version` prints the installed version and exits.
+- Provider searches now survive typos, case differences, missing hyphens and
+  `ё`/`е` spelling. The strict query runs first; if nothing matches, trackfetch
+  retries with `artist title`, `title artist`, the title alone, and the title
+  without its trailing words. The existing match thresholds decide when to
+  stop, so a relaxed query cannot pull in an unrelated song.
+- Metadata matching ignores bracketed noise such as `(Official Video)`,
+  `[Remastered]`, `(Live)` and `feat. ...`, and also accepts a swapped
+  artist/title pair.
+- When every configured provider misses, trackfetch now tries two free
+  fallbacks, `deezer` and then `musicbrainz`. They are skipped when disabled
+  with `--disable-sources` or the config, and with `-s none`.
+- Metadata candidates now carry the track duration (iTunes, Deezer,
+  MusicBrainz, Spotify), and it is stored in the metadata cache. YouTube
+  scoring adds +0.05 when a video is within 3 seconds of it and +0.02 within
+  10 seconds.
+- LRCLIB lyrics lookup now searches by track name first, then with relaxed
+  queries, and ranks results locally by title, artist and duration, preferring
+  timed lyrics on ties. Status lines are now `Lyrics: synced (...)`,
+  `Lyrics: plain only (no synced version)` and `Lyrics: not found`.
 - `--lyrics-type {inline,sidecar,plain}` and the `lyrics_type` config key.
   `inline` keeps the current behaviour and writes LRC timestamps into the plain
   lyrics tag. `sidecar` keeps the tag clean and writes a separate `<file>.lrc`
   next to the audio. `plain` writes only plain text to the tags.
+
+### Fixed
+- A same-title cover by a different artist could replace the requested track
+  after query relaxation. A metadata candidate now also needs at least a rough
+  artist match, so a cover is rejected and the user's own artist and title are
+  kept instead of pointing YouTube at the wrong song.
+- A channel name in front of `Artist - Song` (for example
+  `Some Channel “Artist - Song”`) could score above the official upload. The
+  artist part is now only trusted when the video title starts with the
+  requested artist.
 
 ## [2.2.10] - 2026-11-19
 
@@ -151,7 +183,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - PyInstaller spec, plus prebuilt binaries for Linux, macOS and Windows on x86_64 and ARM64.
 - Automated releases: pushing a new version to `master` builds and publishes all binaries.
 
-[Unreleased]: https://github.com/ByteMe6/trackfetch/compare/v2.2.10...HEAD
+[Unreleased]: https://github.com/ByteMe6/trackfetch/compare/v2.2.11...HEAD
+[2.2.11]: https://github.com/ByteMe6/trackfetch/releases/tag/v2.2.11
 [2.2.10]: https://github.com/ByteMe6/trackfetch/releases/tag/v2.2.10
 [2.2.9]: https://github.com/ByteMe6/trackfetch/releases/tag/v2.2.9
 [2.2.7]: https://github.com/ByteMe6/trackfetch/releases/tag/v2.2.7

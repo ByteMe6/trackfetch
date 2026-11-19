@@ -58,7 +58,11 @@ def pipeline(monkeypatch):
 
     monkeypatch.setattr(m.pipeline, "resolve_metadata", fake_resolve_metadata)
     monkeypatch.setattr(m.pipeline, "find_spotify_track", fake_find_spotify)
-    monkeypatch.setattr(m.pipeline, "find_youtube_video", lambda artist, title: state["video"])
+    monkeypatch.setattr(
+        m.pipeline,
+        "find_youtube_video",
+        lambda artist, title, duration=None: state["video"],
+    )
     monkeypatch.setattr(m.pipeline, "download_audio", fake_download_audio)
     monkeypatch.setattr(m.images, "download_cover", fake_download_cover)
     monkeypatch.setattr(m.providers.spotify, "get_spotify", lambda *a, **k: object())
@@ -141,6 +145,69 @@ class TestProcessSong:
         ) == (True, "downloaded")
 
         assert not (tmp_path / "Daft Punk - One More Time.lrc").exists()
+
+    def test_duration_is_forwarded_to_youtube_and_lyrics(
+        self, pipeline, tmp_path, monkeypatch
+    ):
+        calls = []
+
+        def resolve(artist, title, source_config, runtime):
+            metadata = m.fallback_metadata(artist, title)
+            metadata["duration"] = 321
+            return metadata
+
+        def find_video(artist, title, duration=None):
+            calls.append(("video", duration))
+            return pipeline["video"]
+
+        def find_lyrics(artist, title, runtime=None, duration=None):
+            calls.append(("lyrics", duration))
+            return None
+
+        monkeypatch.setattr(m.pipeline, "resolve_metadata", resolve)
+        monkeypatch.setattr(m.pipeline, "find_youtube_video", find_video)
+        monkeypatch.setattr(m.pipeline, "fetch_lyrics", find_lyrics)
+
+        assert m.process_song(
+            None,
+            "a",
+            "b",
+            tmp_path,
+            False,
+            source_config=m.build_source_config(None, {}),
+            runtime=m.MetadataRuntime(),
+        ) == (True, "downloaded")
+        assert calls == [("video", 321), ("lyrics", 321)]
+
+    def test_synced_lyrics_status_message(self, pipeline, tmp_path, capsys, monkeypatch):
+        monkeypatch.setattr(
+            m.pipeline,
+            "fetch_lyrics",
+            lambda *args, **kwargs: {
+                "plain": "Words",
+                "synced": "[00:01.00]Words",
+            },
+        )
+
+        assert m.process_song(
+            None, "a", "b", tmp_path, False
+        ) == (True, "downloaded")
+        assert "Lyrics: synced (embedded)" in capsys.readouterr().out
+
+    def test_plain_only_lyrics_status_message(self, pipeline, tmp_path, capsys, monkeypatch):
+        monkeypatch.setattr(
+            m.pipeline,
+            "fetch_lyrics",
+            lambda *args, **kwargs: {"plain": "Words", "synced": None},
+        )
+
+        assert m.process_song(
+            None, "a", "b", tmp_path, False
+        ) == (True, "downloaded")
+        assert (
+            "Lyrics: plain only (no synced version)"
+            in capsys.readouterr().out
+        )
 
     def test_missing_lyrics_does_not_fail_download(
         self, pipeline, tmp_path, capsys
@@ -305,7 +372,7 @@ class TestMain:
         )
         out = tmp_path / "out" / "nested"
 
-        def video_for(artist, title):
+        def video_for(artist, title, duration=None):
             return None if pipeline["searched"][-1] == ("Bad", "Song") else pipeline["video"]
 
         monkeypatch.setattr(m.pipeline, "find_youtube_video", video_for)
@@ -342,7 +409,7 @@ class TestMain:
         songs.write_text("Daft Punk - One More Time\nBad - Song\n", encoding="utf-8")
         out = tmp_path / "o"
 
-        def video_for(artist, title):
+        def video_for(artist, title, duration=None):
             return None if artist == "Bad" else pipeline["video"]
 
         def spotify_for(sp, artist, title):
@@ -382,7 +449,7 @@ class TestMain:
         done.write_text("Old - Song\n", encoding="utf-8")
         failed.write_text("Bad - Song | old reason\n", encoding="utf-8")
 
-        def video_for(artist, title):
+        def video_for(artist, title, duration=None):
             return None if artist == "Bad" else pipeline["video"]
 
         def spotify_for(sp, artist, title):

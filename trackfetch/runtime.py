@@ -196,6 +196,7 @@ class MetadataCache:
                 "album_artist",
                 "track_number",
                 "release_date",
+                "duration",
                 "cover_url",
                 "source",
                 "source_id",

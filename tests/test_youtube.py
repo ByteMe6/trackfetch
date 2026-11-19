@@ -37,6 +37,56 @@ class TestScoreYoutubeResult:
     def test_missing_title(self):
         assert isinstance(m.score_youtube_result({}, "Artist", "Song"), float)
 
+    def test_close_duration_gets_a_bonus(self):
+        exact = m.score_youtube_result(
+            {"title": "Artist - Song", "duration": 320}, "Artist", "Song", 320
+        )
+        near = m.score_youtube_result(
+            {"title": "Artist - Song", "duration": 320}, "Artist", "Song", 328
+        )
+        far = m.score_youtube_result(
+            {"title": "Artist - Song", "duration": 320}, "Artist", "Song", 340
+        )
+
+        assert exact > near > far
+
+    def test_artist_part_is_compared_with_artist(self):
+        # "Artist - Song" should not be penalised for the trailing title.
+        assert m.score_youtube_result(
+            {"title": "Artist - Song"}, "Artist", "Song"
+        ) == pytest.approx(1.0)
+
+    def test_channel_name_prefix_does_not_inflate_a_cover(self):
+        official = {"title": "Artist Song (Official Video)", "duration": 157}
+        cover = {"title": "Some Channel “Artist - Song»", "duration": 144}
+
+        assert m.score_youtube_result(
+            official, "Artist", "Song", 157
+        ) > m.score_youtube_result(cover, "Artist", "Song", 157)
+
+    def test_title_suffix_still_matches_official_variants(self):
+        exact = m.score_youtube_result(
+            {"title": "Artist Song"}, "Artist", "Song"
+        )
+        noisy = m.score_youtube_result(
+            {"title": "Artist Song (Official Audio)"}, "Artist", "Song"
+        )
+
+        assert noisy > exact
+
+    def test_duration_without_video_duration_has_no_bonus(self):
+        assert m.score_youtube_result(
+            {"title": "Artist - Song"}, "Artist", "Song", 320
+        ) == self.score("Artist - Song")
+
+    def test_invalid_durations_are_ignored(self):
+        assert m.score_youtube_result(
+            {"title": "Artist - Song", "duration": "nope"},
+            "Artist",
+            "Song",
+            320,
+        ) == self.score("Artist - Song")
+
 
 class TestYoutubeSearch:
     def test_parses_json_lines_and_skips_garbage(self, monkeypatch):
