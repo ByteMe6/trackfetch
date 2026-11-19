@@ -184,7 +184,7 @@ trackfetch "My Playlist.txt" -o ~/Music/"My Playlist"
 ## Usage
 
 ```text
-trackfetch [-h] [--track ARTIST - TITLE ...] [-o OUTPUT] [--config CONFIG] [-f {mp3,m4a,opus}] [--title-only] [--delay DELAY] [-s SOURCES] [--disable-sources SOURCES] [--provider-opt NAME.KEY=VALUE] [--match-threshold SCORE] [--title-threshold SCORE] [--list-sources] [--spotify-client-id ID] [--spotify-client-secret SECRET] [--no-logs] [--color {auto,always,never}] [--color-theme THEME] [--themes-file PATH] [--lyrics | --no-lyrics] [INPUT ...]
+trackfetch [-h] [--track ARTIST - TITLE ...] [-o OUTPUT] [--config CONFIG] [-f {mp3,m4a,opus}] [--title-only] [--delay DELAY] [-s SOURCES] [--disable-sources SOURCES] [--provider-opt NAME.KEY=VALUE] [--match-threshold SCORE] [--title-threshold SCORE] [--list-sources] [--spotify-client-id ID] [--spotify-client-secret SECRET] [--no-logs] [--color {auto,always,never}] [--color-theme THEME] [--themes-file PATH] [--lyrics | --no-lyrics] [--lyrics-type {inline,sidecar,plain}] [INPUT ...]
 ```
 
 | Option | Default | What it does |
@@ -209,6 +209,7 @@ trackfetch [-h] [--track ARTIST - TITLE ...] [-o OUTPUT] [--config CONFIG] [-f {
 | `--color-theme` | `cassette` | Built-in theme (`cassette`, `neon-tape`, `mono`, `vinyl`) or a custom theme from `themes.ini`. |
 | `--themes-file` | next to the config | Path to a custom `themes.ini`. The default file sits next to `trackfetch.ini`. |
 | `--lyrics` / `--no-lyrics` | on | Embed lyrics fetched from LRCLIB into the file tags. Plain text goes to `USLT` (MP3), `©lyr` (M4A) or `LYRICS` (Opus); timed lyrics also go to the format's timed tag. Missing lyrics never fail the download. |
+| `--lyrics-type` | `inline` | How timed lyrics are stored: `inline` puts the raw LRC into the plain lyrics tag (with timestamps), `sidecar` keeps the tag plain and writes a separate `<file>.lrc` next to the audio, `plain` writes only plain text to the tags and keeps timed lyrics in the format's timed tag. |
 | `--cache` / `--no-cache` | on | Reuse and update `metadata-cache.json` in the output directory. Disable to always query the providers. |
 
 ```bash
@@ -349,8 +350,7 @@ JPEG.
 ### Lyrics
 
 For every output format trackfetch also looks up lyrics on
-[LRCLIB](https://lrclib.net/) and embeds them in the tag container, so players
-can show the words offline without sidecar `.lrc` or `.txt` files. Each format
+[LRCLIB](https://lrclib.net/) and embeds them in the tag container. Each format
 uses its own standard tag.
 
 | Format | Plain text | Timed lyrics |
@@ -359,13 +359,25 @@ uses its own standard tag.
 | `m4a` | `©lyr` atom | `SYNCEDLYRICS` freeform atom (`com.apple.iTunes`), raw LRC |
 | `opus` | Vorbis comment `LYRICS` | Vorbis comment `SYNCEDLYRICS`, raw LRC |
 
-When timed lyrics are available, both tags are written: the plain text stays
-readable for players without timed-lyrics support. When only plain lyrics are
-available, only the plain tag is written. Timestamps are never invented.
+When only plain lyrics are available, only the plain tag is written. Timestamps
+are never invented.
+
+`--lyrics-type` controls what happens when timed lyrics are available:
+
+- `inline` (default) writes the raw LRC into the plain lyrics tag as well. This
+  keeps the timestamps visible in players that parse LRC from that tag, but
+  players that display the tag verbatim show `[00:01.00]` prefixes.
+- `sidecar` keeps the plain lyrics tag clean and writes `<file>.lrc` next to
+  the audio. Players that read a sibling LRC file show synchronized lyrics,
+  while everyone else sees plain text. The `.lrc` file has to travel with the
+  audio when files are moved.
+- `plain` writes only plain text to the tags and keeps timed lyrics solely in
+  the format's timed tag.
 
 The source is LRCLIB, which needs no API key. Lyrics embedding is enabled by
 default for all three formats and can be turned off with `--no-lyrics` or
-`lyrics_enabled = false` in the config file.
+`lyrics_enabled = false` in the config file. The placement can also be set with
+`lyrics_type = inline|sidecar|plain`.
 
 Missing lyrics, a timeout or an HTTP error never fails the download. The file
 is still saved with its usual metadata. If a file already contains lyrics and
@@ -440,6 +452,7 @@ youtube_enabled = true
 
 # Lyrics embedding into file tags
 lyrics_enabled = true
+lyrics_type = inline
 
 # Metadata cache (metadata-cache.json in the output directory)
 cache_enabled = true

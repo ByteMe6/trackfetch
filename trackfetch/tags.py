@@ -9,6 +9,7 @@ from mutagen.id3 import APIC, ID3, TALB, TDRC, TIT2, TPE1, TPE2, TRCK
 from mutagen.mp4 import MP4, MP4Cover
 from mutagen.oggopus import OggOpus
 
+from .constants import DEFAULT_LYRICS_TYPE
 from .images import detect_image_format, image_mime_type
 from .lyrics import add_m4a_lyrics, add_mp3_lyrics, add_opus_lyrics
 
@@ -18,6 +19,7 @@ def add_metadata(
     cover_path: Path,
     metadata: dict,
     lyrics=None,
+    lyrics_type=DEFAULT_LYRICS_TYPE,
 ):
     if audio_path.suffix == ".opus":
         add_opus_metadata(
@@ -25,6 +27,7 @@ def add_metadata(
             cover_path,
             metadata,
             lyrics,
+            lyrics_type,
         )
     elif audio_path.suffix == ".m4a":
         add_m4a_metadata(
@@ -32,6 +35,7 @@ def add_metadata(
             cover_path,
             metadata,
             lyrics,
+            lyrics_type,
         )
     else:
         add_mp3_metadata(
@@ -39,6 +43,7 @@ def add_metadata(
             cover_path,
             metadata,
             lyrics,
+            lyrics_type,
         )
 
 
@@ -47,6 +52,7 @@ def add_mp3_metadata(
     cover_path: Path,
     metadata: dict,
     lyrics=None,
+    lyrics_type=DEFAULT_LYRICS_TYPE,
 ):
     try:
         audio = ID3(mp3_path)
@@ -125,7 +131,7 @@ def add_mp3_metadata(
                 )
             )
 
-    add_mp3_lyrics(audio, lyrics)
+    add_mp3_lyrics(audio, lyrics, lyrics_type)
 
     audio.save(
         mp3_path,
@@ -138,6 +144,7 @@ def add_opus_metadata(
     cover_path: Path,
     metadata: dict,
     lyrics=None,
+    lyrics_type=DEFAULT_LYRICS_TYPE,
 ):
     audio = OggOpus(opus_path)
 
@@ -173,7 +180,7 @@ def add_opus_metadata(
                 picture.write()
             ).decode("ascii")
 
-    add_opus_lyrics(audio, lyrics)
+    add_opus_lyrics(audio, lyrics, lyrics_type)
 
     audio.save()
 
@@ -183,6 +190,7 @@ def add_m4a_metadata(
     cover_path: Path,
     metadata: dict,
     lyrics=None,
+    lyrics_type=DEFAULT_LYRICS_TYPE,
 ):
     audio = MP4(m4a_path)
 
@@ -222,6 +230,6 @@ def add_m4a_metadata(
                 MP4Cover(image_data, imageformat=MP4Cover.FORMAT_PNG)
             ]
 
-    add_m4a_lyrics(audio, lyrics)
+    add_m4a_lyrics(audio, lyrics, lyrics_type)
 
     audio.save()

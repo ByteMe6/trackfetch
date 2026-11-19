@@ -272,6 +272,22 @@ class TestMp3Lyrics:
         assert tags.getall("USLT")[0].text == SYNCED_LRC.strip()
         assert tags.getall("SYLT")[0].text
 
+    @pytest.mark.parametrize("lyrics_type", ["sidecar", "plain"])
+    def test_timed_modes_keep_plain_uslt(self, tmp_path, lyrics_type):
+        mp3 = make_mp3(tmp_path / "song.mp3")
+
+        m.add_mp3_metadata(
+            mp3,
+            tmp_path / "missing.jpg",
+            m.fallback_metadata("Artist", "Song"),
+            {"plain": CYRILLIC_LYRICS, "synced": SYNCED_LRC},
+            lyrics_type,
+        )
+
+        tags = ID3(mp3)
+        assert tags.getall("USLT")[0].text == CYRILLIC_LYRICS
+        assert tags.getall("SYLT")[0].text
+
     def test_unicode_and_special_characters_roundtrip(self, tmp_path):
         mp3 = make_mp3(tmp_path / "song.mp3")
         first, second = UNICODE_LYRICS.splitlines()
@@ -423,6 +439,23 @@ class TestContainerLyrics:
         assert tags["\xa9lyr"] == [SYNCED_LRC.strip()]
         assert bytes(tags[m.M4A_SYNCED_LYRICS_KEY][0]).decode("utf-8") == SYNCED_LRC.strip()
 
+    @pytest.mark.parametrize("lyrics_type", ["sidecar", "plain"])
+    def test_m4a_timed_modes_keep_plain_text(self, tmp_path, lyrics_type):
+        audio = tmp_path / "song.m4a"
+        shutil.copy(FIXTURES / "silence.m4a", audio)
+
+        m.add_m4a_metadata(
+            audio,
+            tmp_path / "missing.jpg",
+            m.fallback_metadata("Artist", "Song"),
+            self.LYRICS,
+            lyrics_type,
+        )
+
+        tags = MP4(audio)
+        assert tags["\xa9lyr"] == [CYRILLIC_LYRICS]
+        assert bytes(tags[m.M4A_SYNCED_LYRICS_KEY][0]).decode("utf-8") == SYNCED_LRC.strip()
+
     def test_m4a_plain_only_has_no_synced_atom(self, tmp_path):
         audio = tmp_path / "song.m4a"
         shutil.copy(FIXTURES / "silence.m4a", audio)
@@ -484,6 +517,23 @@ class TestContainerLyrics:
 
         tags = OggOpus(audio)
         assert tags["LYRICS"] == [SYNCED_LRC.strip()]
+        assert tags["SYNCEDLYRICS"] == [SYNCED_LRC.strip()]
+
+    @pytest.mark.parametrize("lyrics_type", ["sidecar", "plain"])
+    def test_opus_timed_modes_keep_plain_text(self, tmp_path, lyrics_type):
+        audio = tmp_path / "song.opus"
+        shutil.copy(FIXTURES / "silence.opus", audio)
+
+        m.add_opus_metadata(
+            audio,
+            tmp_path / "missing.jpg",
+            m.fallback_metadata("Artist", "Song"),
+            self.LYRICS,
+            lyrics_type,
+        )
+
+        tags = OggOpus(audio)
+        assert tags["LYRICS"] == [CYRILLIC_LYRICS]
         assert tags["SYNCEDLYRICS"] == [SYNCED_LRC.strip()]
 
     def test_opus_plain_only_has_no_synced_comment(self, tmp_path):
@@ -553,9 +603,82 @@ class TestContainerLyrics:
         assert "LYRICS" not in OggOpus(tmp_path / "song.opus")
 
 
+class TestLrcSidecar:
+    def test_sidecar_contains_lrc(self, tmp_path):
+        audio = tmp_path / "Artist - Song.mp3"
+        audio.write_bytes(b"audio")
+
+        path = m.write_lrc_sidecar(
+            audio,
+            {"plain": CYRILLIC_LYRICS, "synced": SYNCED_LRC},
+            "sidecar",
+        )
+
+        assert path == tmp_path / "Artist - Song.lrc"
+        assert path.read_text(encoding="utf-8") == SYNCED_LRC.strip() + "\n"
+
+    @pytest.mark.parametrize("lyrics_type", ["inline", "plain"])
+    def test_other_modes_write_nothing(self, tmp_path, lyrics_type):
+        audio = tmp_path / "song.mp3"
+        audio.write_bytes(b"audio")
+
+        assert m.write_lrc_sidecar(
+            audio,
+            {"synced": SYNCED_LRC},
+            lyrics_type,
+        ) is None
+        assert not (tmp_path / "song.lrc").exists()
+
+    def test_sidecar_without_timed_lyrics_removes_stale_file(self, tmp_path):
+        audio = tmp_path / "song.mp3"
+        audio.write_bytes(b"audio")
+        stale = tmp_path / "song.lrc"
+        stale.write_text("[00:01.00]Old", encoding="utf-8")
+
+        assert m.write_lrc_sidecar(
+            audio,
+            {"plain": CYRILLIC_LYRICS},
+            "sidecar",
+        ) is None
+        assert not stale.exists()
+
+
 class TestLyricsSettings:
     def test_enabled_by_default(self):
         assert m.build_source_config(make_args(), {}).lyrics_enabled is True
+
+    def test_type_defaults_to_inline(self):
+        assert m.build_source_config(make_args(), {}).lyrics_type == "inline"
+
+    def test_config_can_set_type(self):
+        config = m.build_source_config(
+            make_args(),
+            {"lyrics_type": "sidecar"},
+        )
+
+        assert config.lyrics_type == "sidecar"
+
+    def test_cli_type_wins_over_config(self):
+        config = m.build_source_config(
+            make_args(lyrics_type="plain"),
+            {"lyrics_type": "sidecar"},
+        )
+
+        assert config.lyrics_type == "plain"
+
+    def test_invalid_config_type_is_rejected(self):
+        with pytest.raises(ValueError, match="lyrics_type"):
+            m.build_source_config(
+                make_args(),
+                {"lyrics_type": "karaoke"},
+            )
+
+    def test_invalid_cli_type_is_rejected(self):
+        with pytest.raises(ValueError, match="lyrics_type"):
+            m.build_source_config(
+                make_args(lyrics_type="karaoke"),
+                {},
+            )
 
     def test_config_can_disable(self):
         config = m.build_source_config(

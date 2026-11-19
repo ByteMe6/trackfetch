@@ -6,6 +6,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+- `--lyrics-type {inline,sidecar,plain}` and the `lyrics_type` config key.
+  `inline` keeps the current behaviour and writes LRC timestamps into the plain
+  lyrics tag. `sidecar` keeps the tag clean and writes a separate `<file>.lrc`
+  next to the audio. `plain` writes only plain text to the tags.
+
 ## [2.2.10] - 2026-11-19
 
 ### Added

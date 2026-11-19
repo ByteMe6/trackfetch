@@ -184,7 +184,7 @@ trackfetch "My Playlist.txt" -o ~/Music/"My Playlist"
 ## Використання
 
 ```text
-trackfetch [-h] [--track ARTIST - TITLE ...] [-o OUTPUT] [--config CONFIG] [-f {mp3,m4a,opus}] [--title-only] [--delay DELAY] [-s SOURCES] [--disable-sources SOURCES] [--provider-opt NAME.KEY=VALUE] [--match-threshold SCORE] [--title-threshold SCORE] [--list-sources] [--spotify-client-id ID] [--spotify-client-secret SECRET] [--no-logs] [--color {auto,always,never}] [--color-theme THEME] [--themes-file PATH] [--lyrics | --no-lyrics] [INPUT ...]
+trackfetch [-h] [--track ARTIST - TITLE ...] [-o OUTPUT] [--config CONFIG] [-f {mp3,m4a,opus}] [--title-only] [--delay DELAY] [-s SOURCES] [--disable-sources SOURCES] [--provider-opt NAME.KEY=VALUE] [--match-threshold SCORE] [--title-threshold SCORE] [--list-sources] [--spotify-client-id ID] [--spotify-client-secret SECRET] [--no-logs] [--color {auto,always,never}] [--color-theme THEME] [--themes-file PATH] [--lyrics | --no-lyrics] [--lyrics-type {inline,sidecar,plain}] [INPUT ...]
 ```
 
 | Параметр | За замовчуванням | Що робить |
@@ -209,6 +209,7 @@ trackfetch [-h] [--track ARTIST - TITLE ...] [-o OUTPUT] [--config CONFIG] [-f {
 | `--color-theme` | `cassette` | Вбудована тема (`cassette`, `neon-tape`, `mono`, `vinyl`) або власна тема з `themes.ini`. |
 | `--themes-file` | поруч із конфігом | Шлях до власного `themes.ini`. За замовчуванням файл лежить поруч із `trackfetch.ini`. |
 | `--lyrics` / `--no-lyrics` | увімкнено | Вбудовувати текст із LRCLIB у теги файлу. Звичайний текст пишеться в `USLT` (MP3), `©lyr` (M4A) або `LYRICS` (Opus), синхронізований — ще й у тег свого формату. Якщо тексту немає, завантаження не вважається помилкою. |
+| `--lyrics-type` | `inline` | Як зберігати синхронізований текст: `inline` кладе LRC прямо в тег звичайного тексту (з таймкодами), `sidecar` залишає тег чистим і пише окремий `<файл>.lrc` поруч з аудіо, `plain` пише в теги лише звичайний текст, а таймкоди залишає в тегу синхронізованого тексту. |
 | `--cache` / `--no-cache` | увімкнено | Використовувати й оновлювати `metadata-cache.json` у теці виводу. Вимкни, щоб щоразу запитувати провайдерів заново. |
 
 ```bash
@@ -351,8 +352,7 @@ MIME тип. MP3 і Opus можуть вбудовувати всі чотири
 ### Текст пісні
 
 Для всіх форматів trackfetch також шукає текст на [LRCLIB](https://lrclib.net/)
-і вбудовує його в теги, щоб плеєр показував слова без інтернету та окремих
-файлів `.lrc` чи `.txt`. Кожен формат використовує свій стандартний тег.
+і вбудовує його в теги. Кожен формат використовує свій стандартний тег.
 
 | Формат | Звичайний текст | Синхронізований текст |
 | --- | --- | --- |
@@ -360,13 +360,24 @@ MIME тип. MP3 і Opus можуть вбудовувати всі чотири
 | `m4a` | атом `©lyr` | freeform-атом `SYNCEDLYRICS` (`com.apple.iTunes`), вихідний LRC |
 | `opus` | Vorbis-коментар `LYRICS` | Vorbis-коментар `SYNCEDLYRICS`, вихідний LRC |
 
-Якщо синхронізований текст є, записуються обидва теги: звичайний текст
-залишається доступним плеєрам без підтримки синхронізованого тексту. Якщо є
-лише звичайний текст, записується тільки він. Штучні таймкоди не створюються.
+Якщо синхронізований текст є, `--lyrics-type` вирішує, де він опиниться:
+
+- `inline` (за замовчуванням) додатково кладе LRC у тег звичайного тексту.
+  Плеєри, які розбирають LRC з цього тегу, показують синхронізацію, а решта
+  бачать таймкоди `[00:01.00]` як звичайний текст.
+- `sidecar` залишає тег чистим і пише `<файл>.lrc` поруч з аудіо. Плеєри, які
+  читають LRC-файл поруч із треком, показують синхронізацію, решта бачать
+  звичайний текст. Файл `.lrc` треба переносити разом з аудіо.
+- `plain` пише в теги лише звичайний текст, а таймкоди залишає в тегу
+  синхронізованого тексту.
+
+Якщо є лише звичайний текст, записується тільки він. Штучні таймкоди не
+створюються.
 
 Джерело — LRCLIB, ключ API не потрібен. За замовчуванням вбудовування
 увімкнено для всіх трьох форматів; вимкнути можна прапорцем `--no-lyrics` або
-рядком `lyrics_enabled = false` у конфігу.
+рядком `lyrics_enabled = false` у конфігу. Режим задається рядком
+`lyrics_type = inline|sidecar|plain`.
 
 Якщо текст не знайдено, сталася помилка мережі або сервер повернув помилку,
 завантаження не переривається: файл зберігається зі звичайними метаданими. Якщо
@@ -441,6 +452,7 @@ youtube_enabled = true
 
 # Вбудовування тексту пісні в теги файлу
 lyrics_enabled = true
+lyrics_type = inline
 
 # Кеш метаданих (metadata-cache.json у теці виводу)
 cache_enabled = true

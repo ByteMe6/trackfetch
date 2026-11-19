@@ -7,10 +7,14 @@ from pathlib import Path
 
 from . import colors
 from .config import build_source_config
-from .constants import DEFAULT_AUDIO_QUALITY, LYRICS_DEFAULT_ENABLED
+from .constants import (
+    DEFAULT_AUDIO_QUALITY,
+    DEFAULT_LYRICS_TYPE,
+    LYRICS_DEFAULT_ENABLED,
+)
 from .files import make_filename
 from .images import download_best_cover
-from .lyrics import fetch_lyrics
+from .lyrics import fetch_lyrics, write_lrc_sidecar
 from .providers.resolver import resolve_metadata
 from .providers.spotify import find_spotify_track, get_track_metadata
 from .tags import add_metadata
@@ -27,6 +31,7 @@ def process_song(
     audio_quality=DEFAULT_AUDIO_QUALITY,
     source_config=None,
     runtime=None,
+    lyrics_type=None,
 ):
     if source_config is None and runtime is None:
         track = find_spotify_track(
@@ -54,6 +59,13 @@ def process_song(
             runtime,
         )
         youtube_enabled = source_config.youtube_enabled
+
+    if lyrics_type is None:
+        lyrics_type = (
+            source_config.lyrics_type
+            if source_config is not None
+            else DEFAULT_LYRICS_TYPE
+        )
 
     print(
         f"{colors.label('Metadata:')} "
@@ -152,10 +164,16 @@ def process_song(
                 )
 
             if lyrics:
-                kinds = "plain + timed" if lyrics.get("synced") else "plain"
+                timed = bool(lyrics.get("synced"))
+                kinds = "plain + timed" if timed else "plain"
+                place = (
+                    "sidecar + tags"
+                    if lyrics_type == "sidecar" and timed
+                    else "embedded"
+                )
                 print(
                     f"{colors.label('Lyrics:')} "
-                    f"{colors.success(f'embedded ({kinds})')}"
+                    f"{colors.success(f'{place} ({kinds})')}"
                 )
 
             elif not lyrics_error:
@@ -167,6 +185,7 @@ def process_song(
                 cover_path,
                 metadata,
                 lyrics,
+                lyrics_type,
             )
 
         except Exception as error:
@@ -177,6 +196,16 @@ def process_song(
                 str(audio_path),
                 str(final_path),
             )
+
+            try:
+                write_lrc_sidecar(final_path, lyrics, lyrics_type)
+
+            except OSError as error:
+                print(
+                    colors.warning(
+                        f"WARNING: could not write LRC file: {error}"
+                    )
+                )
 
         except Exception as error:
             return False, f"move error: {error}"

@@ -1,10 +1,13 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """LRCLIB lyrics lookup and LRC parsing."""
 
+from pathlib import Path
+
 import requests
 from mutagen.id3 import SYLT, USLT
 
 from .constants import (
+    DEFAULT_LYRICS_TYPE,
     DEFAULT_MATCH_THRESHOLD,
     DEFAULT_TITLE_THRESHOLD,
     LRC_TIMESTAMP_RE,
@@ -180,7 +183,36 @@ def split_lyrics(lyrics):
     return plain, synced_entries
 
 
-def add_mp3_lyrics(audio, lyrics):
+def tag_lyrics_text(plain, lrc, lyrics_type):
+    """Pick the text that goes into the format's plain lyrics field."""
+    if lyrics_type == "inline" and lrc:
+        return lrc
+
+    return plain
+
+
+def write_lrc_sidecar(
+    audio_path,
+    lyrics,
+    lyrics_type=DEFAULT_LYRICS_TYPE,
+):
+    """Write a ``.lrc`` next to the audio when sidecar mode is selected."""
+    if lyrics_type != "sidecar":
+        return None
+
+    path = Path(audio_path).with_suffix(".lrc")
+    synced = lrc_text(lyrics or {})
+
+    if not synced:
+        path.unlink(missing_ok=True)
+        return None
+
+    path.write_text(synced.rstrip() + "\n", encoding="utf-8")
+
+    return path
+
+
+def add_mp3_lyrics(audio, lyrics, lyrics_type=DEFAULT_LYRICS_TYPE):
     """Add or replace USLT/SYLT frames without touching other ID3 tags."""
     if not lyrics:
         # No new lyrics is not a reason to delete lyrics that are already there.
@@ -194,27 +226,15 @@ def add_mp3_lyrics(audio, lyrics):
     audio.delall("USLT")
     audio.delall("SYLT")
 
-    lrc = lrc_text(lyrics)
+    text = tag_lyrics_text(plain, lrc_text(lyrics), lyrics_type)
 
-    # Retro Music (and a few other Android players) never reads SYLT. They
-    # read the USLT text and run an LRC parser over it, so the timed text has
-    # to be stored there as well for synchronized lyrics to appear.
-    if synced_entries and lrc:
+    if text:
         audio.add(
             USLT(
                 encoding=1,
                 lang=LYRICS_LANGUAGE,
                 desc="",
-                text=lrc,
-            )
-        )
-    elif plain:
-        audio.add(
-            USLT(
-                encoding=1,
-                lang=LYRICS_LANGUAGE,
-                desc="",
-                text=plain,
+                text=text,
             )
         )
 
@@ -238,7 +258,7 @@ def lrc_text(lyrics):
     return synced or None
 
 
-def add_m4a_lyrics(audio, lyrics):
+def add_m4a_lyrics(audio, lyrics, lyrics_type=DEFAULT_LYRICS_TYPE):
     """Add or replace lyrics atoms in an MP4/M4A file.
 
     Plain text goes to the standard ``©lyr`` atom that iTunes and most
@@ -259,15 +279,16 @@ def add_m4a_lyrics(audio, lyrics):
             del audio[key]
 
     synced = lrc_text(lyrics)
+    text = tag_lyrics_text(plain, synced, lyrics_type)
+
+    if text:
+        audio[M4A_LYRICS_KEY] = [text]
 
     if synced_entries and synced:
-        audio[M4A_LYRICS_KEY] = [synced]
         audio[M4A_SYNCED_LYRICS_KEY] = [synced.encode("utf-8")]
-    elif plain:
-        audio[M4A_LYRICS_KEY] = [plain]
 
 
-def add_opus_lyrics(audio, lyrics):
+def add_opus_lyrics(audio, lyrics, lyrics_type=DEFAULT_LYRICS_TYPE):
     """Add or replace lyrics comments in an Ogg Opus/Vorbis file.
 
     Plain text goes to ``LYRICS`` and timed lyrics to ``SYNCEDLYRICS``,
@@ -287,9 +308,10 @@ def add_opus_lyrics(audio, lyrics):
             del audio[key]
 
     synced = lrc_text(lyrics)
+    text = tag_lyrics_text(plain, synced, lyrics_type)
+
+    if text:
+        audio[OPUS_LYRICS_KEY] = text
 
     if synced_entries and synced:
-        audio[OPUS_LYRICS_KEY] = synced
         audio[OPUS_SYNCED_LYRICS_KEY] = synced
-    elif plain:
-        audio[OPUS_LYRICS_KEY] = plain

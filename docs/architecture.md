@@ -29,7 +29,7 @@ trackfetch/
 │   └── resolver.py      Priority, cooldowns, cache-aware resolution
 ├── youtube.py           Search, scoring and yt-dlp audio download
 ├── images.py            Cover detection, download, Pillow normalization and fallback chain
-├── lyrics.py            LRCLIB lookup and LRC parsing
+├── lyrics.py            LRCLIB lookup, LRC parsing and sidecar writing
 ├── tags.py              MP3 / Opus / M4A tag writers
 ├── files.py             Filenames, song parsing, done/failed logs
 ├── pipeline.py          One-song orchestration

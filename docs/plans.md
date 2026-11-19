@@ -2,6 +2,8 @@
 
 ## LRC sidecar files
 
+Status: implemented as `--lyrics-type sidecar` / `lyrics_type = sidecar`.
+
 Write timed lyrics to a separate `<audio-stem>.lrc` file next to the
 downloaded track, in addition to the embedded tags.
 

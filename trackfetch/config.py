@@ -12,10 +12,12 @@ from .constants import (
     ARTWORK_FALLBACKS,
     CACHE_DEFAULT_ENABLED,
     CJK_RE,
+    DEFAULT_LYRICS_TYPE,
     DEFAULT_MATCH_THRESHOLD,
     DEFAULT_METADATA_SOURCES,
     DEFAULT_TITLE_THRESHOLD,
     LYRICS_DEFAULT_ENABLED,
+    LYRICS_TYPES,
     METADATA_PROVIDERS,
     PROVIDER_DEFAULTS,
     PROVIDER_OPTIONS,
@@ -37,6 +39,7 @@ class SourceConfig:
         none_selected=False,
         lyrics_enabled=LYRICS_DEFAULT_ENABLED,
         cache_enabled=CACHE_DEFAULT_ENABLED,
+        lyrics_type=DEFAULT_LYRICS_TYPE,
     ):
         self.metadata_sources = list(metadata_sources)
         self.youtube_enabled = bool(youtube_enabled)
@@ -46,6 +49,7 @@ class SourceConfig:
         self.none_selected = bool(none_selected)
         self.lyrics_enabled = bool(lyrics_enabled)
         self.cache_enabled = bool(cache_enabled)
+        self.lyrics_type = lyrics_type
 
     def interval(self, name: str) -> float:
         return self.providers[name]["min_interval"]
@@ -398,6 +402,31 @@ def build_source_config(args, settings):
     if cli_cache is not None:
         cache_enabled = bool(cli_cache)
 
+    lyrics_type = DEFAULT_LYRICS_TYPE
+    config_lyrics_type = config_str_value(settings, "lyrics_type")
+
+    if config_lyrics_type is not None:
+        config_lyrics_type = config_lyrics_type.strip().lower()
+
+        if config_lyrics_type not in LYRICS_TYPES:
+            raise ValueError(
+                f"Unknown value for 'lyrics_type': {config_lyrics_type!r} "
+                f"(choose from {', '.join(LYRICS_TYPES)})"
+            )
+
+        lyrics_type = config_lyrics_type
+
+    cli_lyrics_type = getattr(args, "lyrics_type", None)
+
+    if cli_lyrics_type is not None:
+        if cli_lyrics_type not in LYRICS_TYPES:
+            raise ValueError(
+                f"Unknown value for 'lyrics_type': {cli_lyrics_type!r} "
+                f"(choose from {', '.join(LYRICS_TYPES)})"
+            )
+
+        lyrics_type = cli_lyrics_type
+
     match_threshold = threshold_value(
         getattr(args, "match_threshold", None),
         threshold_value(
@@ -426,6 +455,7 @@ def build_source_config(args, settings):
         none_selected,
         lyrics_enabled,
         cache_enabled,
+        lyrics_type,
     )
 
 

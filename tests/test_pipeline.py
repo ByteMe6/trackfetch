@@ -100,6 +100,48 @@ class TestProcessSong:
             ("Вторая строка", 2000),
         ]
 
+    def test_sidecar_lyrics_type_writes_lrc_next_to_audio(
+        self, pipeline, tmp_path, monkeypatch
+    ):
+        monkeypatch.setattr(
+            m.pipeline,
+            "fetch_lyrics",
+            lambda *args, **kwargs: {
+                "plain": "Привет, мир!\nВторая строка",
+                "synced": "[00:01.00]Привет, мир!\n[00:02.00]Вторая строка",
+            },
+        )
+
+        assert m.process_song(
+            None, "a", "b", tmp_path, False, lyrics_type="sidecar"
+        ) == (True, "downloaded")
+
+        audio = tmp_path / "Daft Punk - One More Time.mp3"
+        lrc = tmp_path / "Daft Punk - One More Time.lrc"
+
+        assert ID3(audio).getall("USLT")[0].text == "Привет, мир!\nВторая строка"
+        assert lrc.read_text(encoding="utf-8") == (
+            "[00:01.00]Привет, мир!\n[00:02.00]Вторая строка\n"
+        )
+
+    def test_plain_lyrics_type_writes_no_lrc(
+        self, pipeline, tmp_path, monkeypatch
+    ):
+        monkeypatch.setattr(
+            m.pipeline,
+            "fetch_lyrics",
+            lambda *args, **kwargs: {
+                "plain": "Привет, мир!",
+                "synced": "[00:01.00]Привет, мир!",
+            },
+        )
+
+        assert m.process_song(
+            None, "a", "b", tmp_path, False, lyrics_type="plain"
+        ) == (True, "downloaded")
+
+        assert not (tmp_path / "Daft Punk - One More Time.lrc").exists()
+
     def test_missing_lyrics_does_not_fail_download(
         self, pipeline, tmp_path, capsys
     ):

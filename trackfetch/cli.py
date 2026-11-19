@@ -19,6 +19,7 @@ from .constants import (
     DEFAULT_DELAY,
     DEFAULT_FORMAT,
     LYRICS_MIN_INTERVAL,
+    LYRICS_TYPES,
     METADATA_PROVIDERS,
 )
 from .files import append_line, parse_song, read_done, read_song_file
@@ -311,6 +312,18 @@ def build_parser():
         help=(
             "Embed lyrics from LRCLIB into the tags: ID3 USLT/SYLT for MP3, "
             "©lyr for M4A, LYRICS for Opus (default: on)"
+        ),
+    )
+
+    behavior_group.add_argument(
+        "--lyrics-type",
+        choices=LYRICS_TYPES,
+        default=None,
+        help=(
+            "Timed lyrics placement: inline keeps LRC timestamps in the "
+            "plain lyrics tag (default), sidecar writes a separate "
+            "<file>.lrc and keeps tags plain, plain writes only plain text "
+            "to the tags"
         ),
     )
 
