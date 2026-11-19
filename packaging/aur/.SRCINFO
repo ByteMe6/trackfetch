@@ -14,6 +14,7 @@ pkgbase = trackfetch
 	depends = ffmpeg
 	depends = python
 	depends = python-mutagen
+	depends = python-pillow
 	depends = python-requests
 	depends = python-spotipy
 	depends = yt-dlp

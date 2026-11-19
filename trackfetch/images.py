@@ -1,12 +1,13 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Cover art detection, downloading and fallbacks."""
 
+from io import BytesIO
 from pathlib import Path
 
 import requests
 
 from . import colors
-from .constants import USER_AGENT
+from .constants import MAX_COVER_BYTES, MAX_COVER_SIZE, USER_AGENT
 from .youtube import youtube_thumbnail_urls
 
 IMAGE_FORMATS = {
@@ -47,6 +48,64 @@ def image_mime_type(data: bytes):
         return None
 
     return IMAGE_FORMATS[format_name][0]
+
+
+def prepare_cover(path, max_size=MAX_COVER_SIZE, max_bytes=MAX_COVER_BYTES):
+    """Downscale oversized artwork and re-encode it as JPEG.
+
+    APIC, covr and METADATA_BLOCK_PICTURE store the downloaded bytes
+    verbatim. Without this step a Cover Art Archive original or a large PNG
+    can add megabytes to every file. Small JPEGs are left untouched to
+    avoid needless recompression.
+    """
+    path = Path(path)
+
+    try:
+        from PIL import Image
+    except ImportError:
+        return path
+
+    data = path.read_bytes()
+
+    try:
+        with Image.open(BytesIO(data)) as opened:
+            opened.load()
+
+            if max(opened.size) <= max_size and len(data) <= max_bytes:
+                return path
+
+            if opened.mode in ("RGBA", "LA") or (
+                opened.mode == "P" and "transparency" in opened.info
+            ):
+                rgba = opened.convert("RGBA")
+                image = Image.new("RGB", rgba.size, (255, 255, 255))
+                image.paste(rgba, mask=rgba.getchannel("A"))
+            else:
+                image = opened.convert("RGB")
+
+            image.thumbnail(
+                (max_size, max_size),
+                Image.Resampling.LANCZOS,
+            )
+
+            quality = 90
+            while True:
+                output = BytesIO()
+                image.save(output, "JPEG", quality=quality, optimize=True)
+                if output.tell() <= max_bytes or quality <= 60:
+                    break
+                quality -= 5
+    except Exception:
+        # A valid signature is not a guarantee that the image is decodable.
+        return path
+
+    target = path.with_suffix(".jpg")
+    target.write_bytes(output.getvalue())
+
+    if target != path:
+        path.unlink(missing_ok=True)
+
+    return target
 
 
 def is_image_bytes(data: bytes) -> bool:
@@ -113,6 +172,8 @@ def download_best_cover(metadata, video, cover_path, youtube_enabled):
 
             if cover_path != final_path:
                 cover_path.replace(final_path)
+
+            final_path = prepare_cover(final_path)
 
             if final_path.stat().st_size > 0:
                 print(

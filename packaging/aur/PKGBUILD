@@ -12,6 +12,7 @@ depends=(
   'ffmpeg'
   'python'
   'python-mutagen'
+  'python-pillow'
   'python-requests'
   'python-spotipy'
   'yt-dlp'

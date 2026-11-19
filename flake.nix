@@ -28,6 +28,7 @@
 
           dependencies = with pkgs.python3Packages; [
             mutagen
+            pillow
             requests
             spotipy
             yt-dlp
@@ -75,6 +76,7 @@
             (pkgs.python3.withPackages (
               ps: with ps; [
                 mutagen
+                pillow
                 requests
                 spotipy
                 yt-dlp

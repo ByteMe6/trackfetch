@@ -15,6 +15,7 @@ from .config import build_source_config, config_str_value, format_source_list
 from .constants import (
     AUDIO_FORMATS,
     CACHE_FILENAME,
+    DEFAULT_AUDIO_QUALITY,
     DEFAULT_DELAY,
     DEFAULT_FORMAT,
     LYRICS_MIN_INTERVAL,
@@ -174,6 +175,18 @@ def build_parser():
         choices=list(AUDIO_FORMATS),
         default=None,
         help="Audio format (default: mp3)",
+    )
+
+    output_group.add_argument(
+        "--audio-quality",
+        type=int,
+        choices=range(10),
+        metavar="0-9",
+        default=None,
+        help=(
+            "MP3 VBR quality: 0 is best/largest, 9 is smallest "
+            f"(default: {DEFAULT_AUDIO_QUALITY})"
+        ),
     )
 
     output_group.add_argument(
@@ -531,6 +544,9 @@ def main():
     if args.format is None:
         args.format = DEFAULT_FORMAT
 
+    if args.audio_quality is None:
+        args.audio_quality = DEFAULT_AUDIO_QUALITY
+
     if args.title_only is None:
         args.title_only = False
 
@@ -608,10 +624,28 @@ def main():
 
     songs = unique_songs
 
-    args.output.mkdir(
-        parents=True,
-        exist_ok=True,
-    )
+    try:
+        args.output.mkdir(
+            parents=True,
+            exist_ok=True,
+        )
+    except OSError as error:
+        print(
+            colors.error(
+                f"ERROR: Cannot create output directory "
+                f"{args.output}: {error.strerror or error}"
+            )
+        )
+
+        if sys.platform == "darwin" and str(args.output).startswith("/home/"):
+            print(
+                colors.muted(
+                    "On macOS home directories live under /Users; "
+                    "use ~ or /Users/<name>."
+                )
+            )
+
+        sys.exit(1)
 
     if not args.no_logs:
         done_file = args.output / "done.txt"
@@ -724,6 +758,7 @@ def main():
             args.output,
             args.title_only,
             args.format,
+            args.audio_quality,
             source_config=source_config,
             runtime=runtime,
         )

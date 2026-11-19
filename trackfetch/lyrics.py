@@ -194,10 +194,24 @@ def add_mp3_lyrics(audio, lyrics):
     audio.delall("USLT")
     audio.delall("SYLT")
 
-    if plain:
+    lrc = lrc_text(lyrics)
+
+    # Retro Music (and a few other Android players) never reads SYLT. They
+    # read the USLT text and run an LRC parser over it, so the timed text has
+    # to be stored there as well for synchronized lyrics to appear.
+    if synced_entries and lrc:
         audio.add(
             USLT(
-                encoding=3,
+                encoding=1,
+                lang=LYRICS_LANGUAGE,
+                desc="",
+                text=lrc,
+            )
+        )
+    elif plain:
+        audio.add(
+            USLT(
+                encoding=1,
                 lang=LYRICS_LANGUAGE,
                 desc="",
                 text=plain,
@@ -207,7 +221,7 @@ def add_mp3_lyrics(audio, lyrics):
     if synced_entries:
         audio.add(
             SYLT(
-                encoding=3,
+                encoding=1,
                 lang=LYRICS_LANGUAGE,
                 format=2,
                 type=1,
@@ -244,13 +258,13 @@ def add_m4a_lyrics(audio, lyrics):
         if key in audio:
             del audio[key]
 
-    if plain:
-        audio[M4A_LYRICS_KEY] = [plain]
-
     synced = lrc_text(lyrics)
 
     if synced_entries and synced:
+        audio[M4A_LYRICS_KEY] = [synced]
         audio[M4A_SYNCED_LYRICS_KEY] = [synced.encode("utf-8")]
+    elif plain:
+        audio[M4A_LYRICS_KEY] = [plain]
 
 
 def add_opus_lyrics(audio, lyrics):
@@ -272,10 +286,10 @@ def add_opus_lyrics(audio, lyrics):
         if key in audio:
             del audio[key]
 
-    if plain:
-        audio[OPUS_LYRICS_KEY] = plain
-
     synced = lrc_text(lyrics)
 
     if synced_entries and synced:
+        audio[OPUS_LYRICS_KEY] = synced
         audio[OPUS_SYNCED_LYRICS_KEY] = synced
+    elif plain:
+        audio[OPUS_LYRICS_KEY] = plain

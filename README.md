@@ -34,7 +34,7 @@
 trackfetch reads a plain text file with one `Artist - Title` per line. For every song it looks up metadata and cover art in the configured free sources, picks the best-matching audio on YouTube, and saves an MP3 with complete ID3 tags. Runs are resumable, so you can stop a 1,000-song list at any point and pick it up later.
 
 - **Configurable metadata.** Use iTunes (the default), Deezer, MusicBrainz, VocaDB and optional Spotify. Put them in any priority order with `-s`, or turn them off one by one.
-- **Album art.** Artwork comes from the winning metadata source, then the Cover Art Archive for MusicBrainz, then the YouTube thumbnail. The largest available image is embedded in every file.
+- **Album art.** Artwork comes from the winning metadata source, then the Cover Art Archive for MusicBrainz, then the YouTube thumbnail. It is downscaled to at most 640×640 and re-encoded when it is larger than 100 KiB.
 - **The right upload.** trackfetch scores five YouTube results per song. Official audio wins; covers, karaoke, nightcore, sped-up, slowed, remix and reaction videos lose.
 - **Your choice of format.** MP3 for any player, or Opus and M4A that keep YouTube's original audio without re-encoding.
 - **Resumable.** Finished songs are logged in `done.txt` and skipped next time. Failures go to `failed.txt` with the reason.
@@ -108,6 +108,8 @@ With pipx, a standalone binary or a source install, put these on your `PATH`:
 | [yt-dlp](https://github.com/yt-dlp/yt-dlp) | Searching and downloading from YouTube | `pipx install yt-dlp` · `brew install yt-dlp` · `winget install yt-dlp` |
 | [FFmpeg](https://ffmpeg.org/) | Converting the audio to MP3 | `sudo apt install ffmpeg` · `brew install ffmpeg` · `winget install ffmpeg` |
 | [Deno](https://deno.com/) | JavaScript runtime that yt-dlp needs for YouTube | `curl -fsSL https://deno.land/install.sh \| sh` · `brew install deno` · `winget install DenoLand.Deno` |
+
+[Pillow](https://python-pillow.org/) (the `PIL` module) is used to shrink cover art. It is installed automatically with pip/pipx and bundled inside the prebuilt binaries, so you do not need to add it to `PATH`.
 
 ## Spotify credentials
 

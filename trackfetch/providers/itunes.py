@@ -12,7 +12,7 @@ def upscale_itunes_artwork(url):
     if not url:
         return None
 
-    return re.sub(r"\d+x\d+bb\.", "600x600bb.", url)
+    return re.sub(r"\d+x\d+bb\.", "640x640bb.", url)
 
 
 def itunes_provider(runtime, artist: str, title: str, config: SourceConfig):

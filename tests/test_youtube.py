@@ -123,6 +123,16 @@ class TestDownloadAudio:
         expected = tmp_path / f"audio.{audio_format}"
         assert m.download_audio("u", tmp_path, audio_format) == expected
 
+    def test_audio_quality_is_passed_to_ytdlp(self, monkeypatch, tmp_path):
+        def fake_run(cmd):
+            assert cmd[cmd.index("--audio-quality") + 1] == "7"
+            (tmp_path / "audio.mp3").write_bytes(b"x")
+            return completed()
+
+        monkeypatch.setattr(subprocess, "run", fake_run)
+
+        assert m.download_audio("u", tmp_path, "mp3", 7) == tmp_path / "audio.mp3"
+
     def test_ignores_files_in_other_formats(self, monkeypatch, tmp_path):
         def fake_run(cmd):
             (tmp_path / "audio.webm").write_bytes(b"x")

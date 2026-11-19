@@ -7,7 +7,7 @@ from pathlib import Path
 
 from . import colors
 from .config import build_source_config
-from .constants import LYRICS_DEFAULT_ENABLED
+from .constants import DEFAULT_AUDIO_QUALITY, LYRICS_DEFAULT_ENABLED
 from .files import make_filename
 from .images import download_best_cover
 from .lyrics import fetch_lyrics
@@ -24,6 +24,7 @@ def process_song(
     output,
     title_only,
     audio_format="mp3",
+    audio_quality=DEFAULT_AUDIO_QUALITY,
     source_config=None,
     runtime=None,
 ):
@@ -110,6 +111,7 @@ def process_song(
             video_url,
             temp_dir,
             audio_format,
+            audio_quality,
         )
 
         if not audio_path:

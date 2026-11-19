@@ -29,7 +29,7 @@ def pipeline(monkeypatch):
         state["searched"].append((artist, title))
         return state["track"]
 
-    def fake_download_audio(url, temp_dir, audio_format="mp3"):
+    def fake_download_audio(url, temp_dir, audio_format="mp3", audio_quality=None):
         state["downloaded_urls"].append(url)
         state["formats"].append(audio_format)
         if not state["download_ok"]:
@@ -94,7 +94,7 @@ class TestProcessSong:
         ) == (True, "downloaded")
 
         tags = ID3(tmp_path / "Daft Punk - One More Time.mp3")
-        assert tags.getall("USLT")[0].text == "Привет, мир!\nВторая строка"
+        assert tags.getall("USLT")[0].text == "[00:01.00]Привет, мир!\n[00:02.00]Вторая строка"
         assert tags.getall("SYLT")[0].text == [
             ("Привет, мир!", 1000),
             ("Вторая строка", 2000),
@@ -161,7 +161,7 @@ class TestProcessSong:
         assert m.process_song(None, "a", "b", tmp_path, False, "opus") == (True, "downloaded")
 
         tags = OggOpus(tmp_path / "Daft Punk - One More Time.opus")
-        assert tags["LYRICS"] == ["Words"]
+        assert tags["LYRICS"] == ["[00:01.00]Words"]
         assert tags["SYNCEDLYRICS"] == ["[00:01.00]Words"]
 
     def test_m4a_embeds_lyrics(self, pipeline, tmp_path, monkeypatch):
@@ -177,7 +177,7 @@ class TestProcessSong:
         assert m.process_song(None, "a", "b", tmp_path, False, "m4a") == (True, "downloaded")
 
         tags = MP4(tmp_path / "Daft Punk - One More Time.m4a")
-        assert tags["\xa9lyr"] == ["Words"]
+        assert tags["\xa9lyr"] == ["[00:01.00]Words"]
         assert bytes(tags[m.M4A_SYNCED_LYRICS_KEY][0]).decode("utf-8") == "[00:01.00]Words"
 
     def test_m4a(self, pipeline, tmp_path):

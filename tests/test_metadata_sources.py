@@ -727,7 +727,7 @@ class TestProviders:
         )
 
         assert candidates[0]["title"] == "One More Time"
-        assert candidates[0]["cover_url"] == "https://img/600x600bb.jpg"
+        assert candidates[0]["cover_url"] == "https://img/640x640bb.jpg"
         assert candidates[0]["source"] == "itunes"
         assert session.calls[0]["params"]["country"] == "us"
 
@@ -1365,7 +1365,7 @@ class TestArtwork:
     def test_itunes_artwork_is_upscaled(self):
         assert m.upscale_itunes_artwork(
             "https://img/100x100bb.jpg"
-        ) == "https://img/600x600bb.jpg"
+        ) == "https://img/640x640bb.jpg"
 
     def test_youtube_thumbnail_prefers_largest(self):
         video = {
@@ -1697,7 +1697,7 @@ class TestYoutubeFallback:
         monkeypatch.setattr(
             m.pipeline,
             "download_audio",
-            lambda url, temp_dir, fmt: shutil.copy(
+            lambda url, temp_dir, fmt, quality=None: shutil.copy(
                 FIXTURES / f"silence.{fmt}",
                 temp_dir / f"audio.{fmt}",
             ),

@@ -19,7 +19,7 @@ def pipeline(monkeypatch):
         "formats": [],
     }
 
-    def fake_download_audio(url, temp_dir, audio_format="mp3"):
+    def fake_download_audio(url, temp_dir, audio_format="mp3", audio_quality=None):
         state["formats"].append(audio_format)
         path = temp_dir / f"audio.{audio_format}"
         if audio_format == "mp3":

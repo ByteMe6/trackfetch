@@ -6,6 +6,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [2.2.10] - 2026-11-19
+
+### Added
+- `--audio-quality 0-9` for MP3 VBR quality. The default is now `5` (about
+  130 kbps), which keeps the size close to the source instead of inflating a
+  128 kbps AAC/Opus track to a ~260 kbps MP3 with `0`.
+- Cover art is normalized with Pillow before embedding: images larger than
+  640 px or 100 KiB are downscaled and re-encoded as JPEG. iTunes artwork is
+  requested at 640×640 instead of 600×600. Pillow is now declared for pip,
+  Nix, AUR and Homebrew installs.
+
+### Fixed
+- Timed lyrics are now also stored in `USLT`, `©lyr` and `LYRICS` as LRC text
+  when SYLT/freeform timed lyrics exist. Retro Music and other Android players
+  read LRC from the plain lyrics field and ignore SYLT, so synchronized lyrics
+  now appear there too.
+- An output directory that cannot be created (for example `/home/...` on
+  macOS) now gives a clear error instead of a traceback, with a hint to use
+  `~` or `/Users/<name>`.
+
 ## [2.2.9] - 2026-11-19
 
 ### Added
@@ -125,7 +145,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - PyInstaller spec, plus prebuilt binaries for Linux, macOS and Windows on x86_64 and ARM64.
 - Automated releases: pushing a new version to `master` builds and publishes all binaries.
 
-[Unreleased]: https://github.com/ByteMe6/trackfetch/compare/v2.2.9...HEAD
+[Unreleased]: https://github.com/ByteMe6/trackfetch/compare/v2.2.10...HEAD
+[2.2.10]: https://github.com/ByteMe6/trackfetch/releases/tag/v2.2.10
 [2.2.9]: https://github.com/ByteMe6/trackfetch/releases/tag/v2.2.9
 [2.2.7]: https://github.com/ByteMe6/trackfetch/releases/tag/v2.2.7
 [2.2.6]: https://github.com/ByteMe6/trackfetch/releases/tag/v2.2.6

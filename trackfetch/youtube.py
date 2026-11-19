@@ -6,7 +6,11 @@ import subprocess
 from pathlib import Path
 
 from . import colors
-from .constants import AUDIO_FORMATS, YTDLP_REMOTE_COMPONENTS
+from .constants import (
+    AUDIO_FORMATS,
+    DEFAULT_AUDIO_QUALITY,
+    YTDLP_REMOTE_COMPONENTS,
+)
 from .matching import normalize, similarity
 
 
@@ -168,6 +172,7 @@ def download_audio(
     video_url: str,
     temp_dir: Path,
     audio_format: str = "mp3",
+    audio_quality: int = DEFAULT_AUDIO_QUALITY,
 ):
     template = str(temp_dir / "audio.%(ext)s")
 
@@ -178,7 +183,7 @@ def download_audio(
         "--audio-format",
         audio_format,
         "--audio-quality",
-        "0",
+        str(audio_quality),
         "--remote-components",
         YTDLP_REMOTE_COMPONENTS,
         "--no-playlist",

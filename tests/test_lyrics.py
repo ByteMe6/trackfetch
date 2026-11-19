@@ -269,7 +269,7 @@ class TestMp3Lyrics:
         )
 
         tags = ID3(mp3)
-        assert tags.getall("USLT")[0].text == CYRILLIC_LYRICS
+        assert tags.getall("USLT")[0].text == SYNCED_LRC.strip()
         assert tags.getall("SYLT")[0].text
 
     def test_unicode_and_special_characters_roundtrip(self, tmp_path):
@@ -287,7 +287,7 @@ class TestMp3Lyrics:
         )
 
         tags = ID3(mp3)
-        assert tags.getall("USLT")[0].text == UNICODE_LYRICS
+        assert tags.getall("USLT")[0].text == f"[00:01.00]{first}\n[00:02.00]{second}"
         assert tags.getall("SYLT")[0].text == [
             (first, 1000),
             (second, 2000),
@@ -358,7 +358,7 @@ class TestMp3Lyrics:
         tags = ID3(mp3)
         assert len(tags.getall("USLT")) == 1
         assert len(tags.getall("SYLT")) == 1
-        assert tags.getall("USLT")[0].text == "New words"
+        assert tags.getall("USLT")[0].text == "[00:02.00]New words"
         assert tags.getall("SYLT")[0].text == [("New words", 2000)]
 
     def test_preserves_existing_tags_and_cover(self, tmp_path):
@@ -420,7 +420,7 @@ class TestContainerLyrics:
         )
 
         tags = MP4(audio)
-        assert tags["\xa9lyr"] == [CYRILLIC_LYRICS]
+        assert tags["\xa9lyr"] == [SYNCED_LRC.strip()]
         assert bytes(tags[m.M4A_SYNCED_LYRICS_KEY][0]).decode("utf-8") == SYNCED_LRC.strip()
 
     def test_m4a_plain_only_has_no_synced_atom(self, tmp_path):
@@ -452,7 +452,7 @@ class TestContainerLyrics:
         )
 
         tags = MP4(audio)
-        assert tags["\xa9lyr"] == ["New words"]
+        assert tags["\xa9lyr"] == ["[00:02.00]New words"]
         assert bytes(tags[m.M4A_SYNCED_LYRICS_KEY][0]).decode("utf-8") == "[00:02.00]New words"
 
     def test_m4a_keeps_existing_lyrics_when_none_found(self, tmp_path):
@@ -483,7 +483,7 @@ class TestContainerLyrics:
         )
 
         tags = OggOpus(audio)
-        assert tags["LYRICS"] == [CYRILLIC_LYRICS]
+        assert tags["LYRICS"] == [SYNCED_LRC.strip()]
         assert tags["SYNCEDLYRICS"] == [SYNCED_LRC.strip()]
 
     def test_opus_plain_only_has_no_synced_comment(self, tmp_path):
@@ -515,7 +515,7 @@ class TestContainerLyrics:
         )
 
         tags = OggOpus(audio)
-        assert tags["LYRICS"] == ["New words"]
+        assert tags["LYRICS"] == ["[00:02.00]New words"]
         assert tags["SYNCEDLYRICS"] == ["[00:02.00]New words"]
 
     def test_opus_keeps_existing_lyrics_when_none_found(self, tmp_path):

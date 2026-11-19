@@ -11,8 +11,11 @@ CONFIG_ENV = "TRACKFETCH_CONFIG"
 THEMES_FILENAME = "themes.ini"
 
 DEFAULT_FORMAT = "mp3"
+DEFAULT_AUDIO_QUALITY = 5
 DEFAULT_DELAY = 1.0
 MAX_FILENAME_BYTES = 200
+MAX_COVER_SIZE = 640
+MAX_COVER_BYTES = 100 * 1024
 
 AUDIO_FORMATS = {
     "mp3": [],
@@ -26,7 +29,7 @@ AUDIO_FORMATS = {
     ],
 }
 
-VERSION = "2.2.9"
+VERSION = "2.2.10"
 USER_AGENT = (
     f"trackfetch/{VERSION} "
     "(https://github.com/ByteMe6/trackfetch)"

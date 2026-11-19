@@ -20,7 +20,7 @@ def pipeline(monkeypatch):
         state["searched"].append((artist, title))
         return state["track"]
 
-    def fake_download_audio(url, temp_dir, audio_format="mp3"):
+    def fake_download_audio(url, temp_dir, audio_format="mp3", audio_quality=None):
         path = temp_dir / f"audio.{audio_format}"
         if audio_format == "mp3":
             path.write_bytes(b"\x00" * 64)
@@ -212,6 +212,23 @@ class TestEdgeCases:
 
         assert exc.value.code == 1
         assert "not a directory" in capsys.readouterr().out
+
+    def test_output_that_cannot_be_created_exits(
+        self, pipeline, monkeypatch, tmp_path, capsys
+    ):
+        blocker = tmp_path / "blocker"
+        blocker.write_bytes(b"")
+
+        with pytest.raises(SystemExit) as exc:
+            run_cli(
+                monkeypatch,
+                "Daft Punk - One More Time",
+                "-o",
+                blocker / "sub",
+            )
+
+        assert exc.value.code == 1
+        assert "Cannot create output directory" in capsys.readouterr().out
 
     def test_empty_input_file_exits(self, pipeline, monkeypatch, tmp_path, capsys):
         songs = tmp_path / "songs.txt"
