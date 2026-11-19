@@ -7,8 +7,10 @@ Config-file discovery and CLI/config precedence live in ``settings.py``.
 import math
 import re
 
+from . import colors
 from .constants import (
     ARTWORK_FALLBACKS,
+    CACHE_DEFAULT_ENABLED,
     CJK_RE,
     DEFAULT_MATCH_THRESHOLD,
     DEFAULT_METADATA_SOURCES,
@@ -34,6 +36,7 @@ class SourceConfig:
         title_threshold,
         none_selected=False,
         lyrics_enabled=LYRICS_DEFAULT_ENABLED,
+        cache_enabled=CACHE_DEFAULT_ENABLED,
     ):
         self.metadata_sources = list(metadata_sources)
         self.youtube_enabled = bool(youtube_enabled)
@@ -42,6 +45,7 @@ class SourceConfig:
         self.title_threshold = title_threshold
         self.none_selected = bool(none_selected)
         self.lyrics_enabled = bool(lyrics_enabled)
+        self.cache_enabled = bool(cache_enabled)
 
     def interval(self, name: str) -> float:
         return self.providers[name]["min_interval"]
@@ -381,6 +385,19 @@ def build_source_config(args, settings):
     if cli_lyrics is not None:
         lyrics_enabled = bool(cli_lyrics)
 
+    cache_enabled = CACHE_DEFAULT_ENABLED
+
+    if "cache_enabled" in settings and str(settings["cache_enabled"]).strip():
+        cache_enabled = parse_bool(
+            settings["cache_enabled"],
+            "cache_enabled",
+        )
+
+    cli_cache = getattr(args, "cache_enabled", None)
+
+    if cli_cache is not None:
+        cache_enabled = bool(cli_cache)
+
     match_threshold = threshold_value(
         getattr(args, "match_threshold", None),
         threshold_value(
@@ -408,6 +425,7 @@ def build_source_config(args, settings):
         title_threshold,
         none_selected,
         lyrics_enabled,
+        cache_enabled,
     )
 
 
@@ -444,11 +462,21 @@ def effective_metadata_sources(config: SourceConfig, artist: str, title: str):
 
 
 def format_source_list(config: SourceConfig) -> str:
-    lines = ["Available sources:", "", "Metadata providers:"]
+    lines = [
+        colors.heading("Available sources:"),
+        "",
+        colors.heading("Metadata providers:"),
+    ]
 
     for name in METADATA_PROVIDERS:
         entry = config.providers[name]
-        status = "enabled" if entry.get("enabled") else "disabled"
+        enabled = bool(entry.get("enabled"))
+        status_text = "enabled" if enabled else "disabled"
+        status = (
+            colors.success(f"{status_text:<9}")
+            if enabled
+            else colors.muted(f"{status_text:<9}")
+        )
         credentials = "required" if name == "spotify" else "not required"
         details = [f"min_interval={entry['min_interval']}s"]
 
@@ -456,31 +484,46 @@ def format_source_list(config: SourceConfig) -> str:
             details.insert(0, f"country={entry.get('country', 'us')}")
 
         lines.append(
-            f"  {name:<12} {status:<9} credentials: {credentials:<13} "
-            f"{', '.join(details)}"
+            f"  {colors.accent(f'{name:<12}')} {status} "
+            f"credentials: {colors.muted(f'{credentials:<13}')} "
+            f"{colors.muted(', '.join(details))}"
         )
 
-    lines.extend(["", "Artwork fallbacks:"])
+    lines.extend(["", colors.heading("Artwork fallbacks:")])
 
     for name in ARTWORK_FALLBACKS:
-        status = "enabled" if config.youtube_enabled else "disabled"
+        enabled = bool(config.youtube_enabled)
+        status_text = "enabled" if enabled else "disabled"
+        status = (
+            colors.success(f"{status_text:<9}")
+            if enabled
+            else colors.muted(f"{status_text:<9}")
+        )
         lines.append(
-            f"  {name:<12} {status:<9} credentials: not required  "
-            f"used when metadata has no artwork"
+            f"  {colors.accent(f'{name:<12}')} {status} "
+            f"credentials: {colors.muted('not required  ')}"
+            f"{colors.muted('used when metadata has no artwork')}"
         )
 
+    lyrics = (
+        colors.success("enabled (LRCLIB, all formats)")
+        if config.lyrics_enabled
+        else colors.muted("disabled")
+    )
+    cache = (
+        colors.success("enabled (metadata-cache.json)")
+        if config.cache_enabled
+        else colors.muted("disabled")
+    )
     lines.extend(
         [
             "",
-            f"Metadata priority: {', '.join(config.metadata_sources) or 'none'}",
-            f"Match threshold: {config.match_threshold}",
-            f"Title threshold: {config.title_threshold}",
-            "Lyrics embedding: "
-            + (
-                "enabled (LRCLIB, MP3 only)"
-                if config.lyrics_enabled
-                else "disabled"
-            ),
+            f"{colors.label('Metadata priority:')} "
+            + colors.accent(", ".join(config.metadata_sources) or "none"),
+            f"{colors.label('Match threshold:')} {config.match_threshold}",
+            f"{colors.label('Title threshold:')} {config.title_threshold}",
+            f"{colors.label('Lyrics embedding:')} {lyrics}",
+            f"{colors.label('Metadata cache:')} {cache}",
         ]
     )
 

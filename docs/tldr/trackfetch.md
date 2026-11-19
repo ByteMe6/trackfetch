@@ -16,13 +16,13 @@
 
 `trackfetch {{path/to/songs.txt}} {{[-f|--format]}} {{opus|m4a}}`
 
-- Embed lyrics from LRCLIB into MP3 tags (enabled by default):
+- Embed lyrics from LRCLIB into the file tags (enabled by default for MP3, M4A and Opus):
 
-`trackfetch {{path/to/songs.txt}} {{[-f|--format]}} {{mp3}}`
+`trackfetch {{path/to/songs.txt}}`
 
-- Do not embed lyrics into MP3 tags:
+- Do not embed lyrics into the tags:
 
-`trackfetch {{path/to/songs.txt}} {{[-f|--format]}} {{mp3}} --no-lyrics`
+`trackfetch {{path/to/songs.txt}} --no-lyrics`
 
 - Download a few tracks without a text file:
 
@@ -51,6 +51,18 @@
 - List the available metadata providers and artwork fallbacks:
 
 `trackfetch --list-sources`
+
+- Turn color off for clean logs, or force it in a pipe:
+
+`trackfetch {{path/to/songs.txt}} --color {{never|always}}`
+
+- Choose a built-in color theme:
+
+`trackfetch {{path/to/songs.txt}} --color-theme {{cassette|neon-tape|mono|vinyl}}`
+
+- Use custom themes from a `themes.ini` file:
+
+`trackfetch {{path/to/songs.txt}} --themes-file {{path/to/themes.ini}} --color-theme {{sunset}}`
 
 - Set a provider-specific option:
 

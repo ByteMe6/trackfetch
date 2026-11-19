@@ -56,7 +56,7 @@ class TestInlineTracks:
         run_cli(monkeypatch, "Daft Punk - One More Time", "-o", out)
 
         assert pipeline["searched"] == [("Daft Punk", "One More Time")]
-        assert (out / "Daft Punk - One More Time.m4a").exists()
+        assert (out / "Daft Punk - One More Time.mp3").exists()
 
     def test_several_inline_tracks(self, pipeline, monkeypatch, tmp_path):
         out = tmp_path / "o"
@@ -165,7 +165,7 @@ class TestInlineTracks:
 
         run_cli(monkeypatch, "Daft Punk - One More Time", "--config", config)
 
-        assert (out / "Daft Punk - One More Time.m4a").exists()
+        assert (out / "Daft Punk - One More Time.mp3").exists()
 
 
 class TestDuplicates:
@@ -262,8 +262,8 @@ class TestEdgeCases:
 
         run_cli(monkeypatch, songs, "-o", out)
 
-        assert (out / "Daft Punk - One More Time.m4a").exists()
-        assert not (out / "\ufeffDaft Punk - One More Time.m4a").exists()
+        assert (out / "Daft Punk - One More Time.mp3").exists()
+        assert not (out / "\ufeffDaft Punk - One More Time.mp3").exists()
 
     def test_unparsable_lines_in_a_file_are_reported(
         self, pipeline, monkeypatch, tmp_path, capsys
@@ -288,7 +288,7 @@ class TestEdgeCases:
 
         run_cli(monkeypatch, songs, "-o", out)
 
-        files = list(out.glob("*.m4a"))
+        files = list(out.glob("*.mp3"))
 
         assert len(files) == 1
         assert len(files[0].name.encode("utf-8")) < 255

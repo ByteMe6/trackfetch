@@ -1,9 +1,13 @@
 import argparse
+import shutil
 import sys
 from pathlib import Path
 
 import pytest
+from conftest import FIXTURES
 from mutagen.id3 import COMM, ID3, TCOM, TIT2, USLT
+from mutagen.mp4 import MP4
+from mutagen.oggopus import OggOpus
 
 import trackfetch as m
 
@@ -396,6 +400,159 @@ class TestMp3Lyrics:
         assert audio_payload(mp3) == payload
 
 
+class TestContainerLyrics:
+    """M4A and Opus use their own standard lyrics tags, not ID3 frames."""
+
+    LYRICS = {
+        "plain": CYRILLIC_LYRICS,
+        "synced": SYNCED_LRC,
+    }
+
+    def test_m4a_writes_plain_and_synced(self, tmp_path):
+        audio = tmp_path / "song.m4a"
+        shutil.copy(FIXTURES / "silence.m4a", audio)
+
+        m.add_m4a_metadata(
+            audio,
+            tmp_path / "missing.jpg",
+            m.fallback_metadata("Artist", "Song"),
+            self.LYRICS,
+        )
+
+        tags = MP4(audio)
+        assert tags["\xa9lyr"] == [CYRILLIC_LYRICS]
+        assert bytes(tags[m.M4A_SYNCED_LYRICS_KEY][0]).decode("utf-8") == SYNCED_LRC.strip()
+
+    def test_m4a_plain_only_has_no_synced_atom(self, tmp_path):
+        audio = tmp_path / "song.m4a"
+        shutil.copy(FIXTURES / "silence.m4a", audio)
+
+        m.add_m4a_metadata(
+            audio,
+            tmp_path / "missing.jpg",
+            m.fallback_metadata("Artist", "Song"),
+            {"plain": CYRILLIC_LYRICS},
+        )
+
+        tags = MP4(audio)
+        assert tags["\xa9lyr"] == [CYRILLIC_LYRICS]
+        assert m.M4A_SYNCED_LYRICS_KEY not in tags
+
+    def test_m4a_rewrites_without_duplicates(self, tmp_path):
+        audio = tmp_path / "song.m4a"
+        shutil.copy(FIXTURES / "silence.m4a", audio)
+        metadata = m.fallback_metadata("Artist", "Song")
+
+        m.add_m4a_metadata(audio, tmp_path / "missing.jpg", metadata, self.LYRICS)
+        m.add_m4a_metadata(
+            audio,
+            tmp_path / "missing.jpg",
+            metadata,
+            {"plain": "New words", "synced": "[00:02.00]New words"},
+        )
+
+        tags = MP4(audio)
+        assert tags["\xa9lyr"] == ["New words"]
+        assert bytes(tags[m.M4A_SYNCED_LYRICS_KEY][0]).decode("utf-8") == "[00:02.00]New words"
+
+    def test_m4a_keeps_existing_lyrics_when_none_found(self, tmp_path):
+        audio = tmp_path / "song.m4a"
+        shutil.copy(FIXTURES / "silence.m4a", audio)
+        tags = MP4(audio)
+        tags["\xa9lyr"] = ["Old words"]
+        tags.save()
+
+        m.add_m4a_metadata(
+            audio,
+            tmp_path / "missing.jpg",
+            m.fallback_metadata("Artist", "Song"),
+            None,
+        )
+
+        assert MP4(audio)["\xa9lyr"] == ["Old words"]
+
+    def test_opus_writes_plain_and_synced(self, tmp_path):
+        audio = tmp_path / "song.opus"
+        shutil.copy(FIXTURES / "silence.opus", audio)
+
+        m.add_opus_metadata(
+            audio,
+            tmp_path / "missing.jpg",
+            m.fallback_metadata("Artist", "Song"),
+            self.LYRICS,
+        )
+
+        tags = OggOpus(audio)
+        assert tags["LYRICS"] == [CYRILLIC_LYRICS]
+        assert tags["SYNCEDLYRICS"] == [SYNCED_LRC.strip()]
+
+    def test_opus_plain_only_has_no_synced_comment(self, tmp_path):
+        audio = tmp_path / "song.opus"
+        shutil.copy(FIXTURES / "silence.opus", audio)
+
+        m.add_opus_metadata(
+            audio,
+            tmp_path / "missing.jpg",
+            m.fallback_metadata("Artist", "Song"),
+            {"plain": CYRILLIC_LYRICS},
+        )
+
+        tags = OggOpus(audio)
+        assert tags["LYRICS"] == [CYRILLIC_LYRICS]
+        assert "SYNCEDLYRICS" not in tags
+
+    def test_opus_rewrites_without_duplicates(self, tmp_path):
+        audio = tmp_path / "song.opus"
+        shutil.copy(FIXTURES / "silence.opus", audio)
+        metadata = m.fallback_metadata("Artist", "Song")
+
+        m.add_opus_metadata(audio, tmp_path / "missing.jpg", metadata, self.LYRICS)
+        m.add_opus_metadata(
+            audio,
+            tmp_path / "missing.jpg",
+            metadata,
+            {"plain": "New words", "synced": "[00:02.00]New words"},
+        )
+
+        tags = OggOpus(audio)
+        assert tags["LYRICS"] == ["New words"]
+        assert tags["SYNCEDLYRICS"] == ["[00:02.00]New words"]
+
+    def test_opus_keeps_existing_lyrics_when_none_found(self, tmp_path):
+        audio = tmp_path / "song.opus"
+        shutil.copy(FIXTURES / "silence.opus", audio)
+        tags = OggOpus(audio)
+        tags["LYRICS"] = "Old words"
+        tags.save()
+
+        m.add_opus_metadata(
+            audio,
+            tmp_path / "missing.jpg",
+            m.fallback_metadata("Artist", "Song"),
+            None,
+        )
+
+        assert OggOpus(audio)["LYRICS"] == ["Old words"]
+
+    def test_empty_lyrics_add_no_tags(self, tmp_path):
+        for name, writer in (
+            ("m4a", m.add_m4a_metadata),
+            ("opus", m.add_opus_metadata),
+        ):
+            audio = tmp_path / f"song.{name}"
+            shutil.copy(FIXTURES / f"silence.{name}", audio)
+
+            writer(
+                audio,
+                tmp_path / "missing.jpg",
+                m.fallback_metadata("Artist", "Song"),
+                {"plain": "   ", "synced": "[00:01.00]   "},
+            )
+
+        assert "\xa9lyr" not in MP4(tmp_path / "song.m4a")
+        assert "LYRICS" not in OggOpus(tmp_path / "song.opus")
+
+
 class TestLyricsSettings:
     def test_enabled_by_default(self):
         assert m.build_source_config(make_args(), {}).lyrics_enabled is True
@@ -526,3 +683,61 @@ class TestLyricsCli:
 
         assert exc.value.code == 1
         assert "Invalid value for 'lyrics_enabled'" in capsys.readouterr().out
+
+
+class TestCacheSettings:
+    def test_enabled_by_default(self):
+        assert m.build_source_config(make_args(), {}).cache_enabled is True
+
+    def test_config_can_disable(self):
+        config = m.build_source_config(make_args(), {"cache_enabled": "false"})
+
+        assert config.cache_enabled is False
+
+    def test_cli_disable_wins_over_config_enable(self):
+        config = m.build_source_config(
+            make_args(cache_enabled=False),
+            {"cache_enabled": "true"},
+        )
+
+        assert config.cache_enabled is False
+
+    def test_cli_enable_wins_over_config_disable(self):
+        config = m.build_source_config(
+            make_args(cache_enabled=True),
+            {"cache_enabled": "false"},
+        )
+
+        assert config.cache_enabled is True
+
+    def test_invalid_config_value_is_rejected(self):
+        with pytest.raises(ValueError, match="cache_enabled"):
+            m.build_source_config(make_args(), {"cache_enabled": "maybe"})
+
+
+class TestCacheCli:
+    def run_cli(self, monkeypatch, *args):
+        monkeypatch.setattr(sys, "argv", ["trackfetch", *map(str, args)])
+        m.main()
+
+    def isolate(self, monkeypatch, tmp_path):
+        monkeypatch.chdir(tmp_path)
+        monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
+        monkeypatch.delenv("TRACKFETCH_CONFIG", raising=False)
+        monkeypatch.setattr(
+            Path, "home", classmethod(lambda cls: tmp_path / "home")
+        )
+
+    def test_list_sources_shows_enabled_by_default(self, monkeypatch, tmp_path, capsys):
+        self.isolate(monkeypatch, tmp_path)
+
+        self.run_cli(monkeypatch, "--list-sources")
+
+        assert "Metadata cache: enabled" in capsys.readouterr().out
+
+    def test_no_cache_is_shown_by_list_sources(self, monkeypatch, tmp_path, capsys):
+        self.isolate(monkeypatch, tmp_path)
+
+        self.run_cli(monkeypatch, "--list-sources", "--no-cache")
+
+        assert "Metadata cache: disabled" in capsys.readouterr().out

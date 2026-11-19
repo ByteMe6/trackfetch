@@ -5,7 +5,29 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+import trackfetch.colors as colors  # noqa: E402
+
 FIXTURES = Path(__file__).resolve().parent / "fixtures"
+
+
+@pytest.fixture(autouse=True)
+def reset_color_state():
+    """Keep color globals and custom themes from leaking between tests."""
+    themes = dict(colors.THEMES)
+    custom = set(colors._custom_themes)
+    mode = colors.get_color_mode()
+    theme = colors.get_theme()
+    windows_ready = colors._windows_ansi_ready
+
+    yield
+
+    colors.THEMES.clear()
+    colors.THEMES.update(themes)
+    colors._custom_themes.clear()
+    colors._custom_themes.update(custom)
+    colors.set_color_mode(mode)
+    colors.set_theme(theme)
+    colors._windows_ansi_ready = windows_ready
 
 
 def make_track(

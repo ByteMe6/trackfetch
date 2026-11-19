@@ -182,7 +182,7 @@ trackfetch "My Playlist.txt" -o ~/Music/"My Playlist"
 ## Використання
 
 ```text
-trackfetch [-h] [--track ARTIST - TITLE ...] [-o OUTPUT] [--config CONFIG] [-f {mp3,m4a,opus}] [--title-only] [--delay DELAY] [-s SOURCES] [--disable-sources SOURCES] [--provider-opt NAME.KEY=VALUE] [--match-threshold SCORE] [--title-threshold SCORE] [--list-sources] [--spotify-client-id ID] [--spotify-client-secret SECRET] [--no-logs] [--lyrics | --no-lyrics] [INPUT ...]
+trackfetch [-h] [--track ARTIST - TITLE ...] [-o OUTPUT] [--config CONFIG] [-f {mp3,m4a,opus}] [--title-only] [--delay DELAY] [-s SOURCES] [--disable-sources SOURCES] [--provider-opt NAME.KEY=VALUE] [--match-threshold SCORE] [--title-threshold SCORE] [--list-sources] [--spotify-client-id ID] [--spotify-client-secret SECRET] [--no-logs] [--color {auto,always,never}] [--color-theme THEME] [--themes-file PATH] [--lyrics | --no-lyrics] [INPUT ...]
 ```
 
 | Параметр | За замовчуванням | Що робить |
@@ -191,7 +191,7 @@ trackfetch [-h] [--track ARTIST - TITLE ...] [-o OUTPUT] [--config CONFIG] [-f {
 | `--track` | — | Трек для завантаження просто з аргументів, `Виконавець - Назва`. Можна вказати кілька разів. |
 | `-o`, `--output` | поточна директорія | Тека для файлів. Якщо її немає, вона буде створена. |
 | `--config` | шукається автоматично | Шлях до [конфіг-файлу](#конфіг-файл). |
-| `-f`, `--format` | `m4a` | Формат звуку: `mp3`, `m4a` або `opus`. Див. [Формати звуку](#формати-звуку). |
+| `-f`, `--format` | `mp3` | Формат звуку: `mp3`, `m4a` або `opus`. Див. [Формати звуку](#формати-звуку). |
 | `--title-only` | вимкнено | Називати файли `Назва.m4a` замість `Виконавець - Назва.m4a` |
 | `--delay` | `1.0` | Пауза між піснями в секундах. Для довгих списків її варто збільшити. |
 | `-s`, `--metadata-sources` | `itunes` | Пріоритет джерел через кому, наприклад `deezer,itunes,musicbrainz`. `none` вимикає метадані, але залишає YouTube. Вибір у командному рядку перевизначає вимкнення цих джерел у конфігу. |
@@ -203,7 +203,11 @@ trackfetch [-h] [--track ARTIST - TITLE ...] [-o OUTPUT] [--config CONFIG] [-f {
 | `--spotify-client-id` | `$SPOTIFY_CLIENT_ID` | Client ID для Spotify API. Див. [Дані Spotify](#дані-spotify). |
 | `--spotify-client-secret` | `$SPOTIFY_CLIENT_SECRET` | Client secret для Spotify API. |
 | `--no-logs` | вимкнено | Не читати `done.txt` і не писати `done.txt` та `failed.txt`. Прогрес минулих запусків не враховується, тому готові пісні не пропускаються. |
-| `--lyrics` / `--no-lyrics` | увімкнено | Вбудовувати текст із LRCLIB у теги MP3. Звичайний текст пишеться в `USLT`, синхронізований — ще й у `SYLT`. Якщо тексту немає, завантаження не вважається помилкою. |
+| `--color` | `auto` | Розфарбовувати вивід: `auto`, `always` або `never`. `auto` вмикає колір в інтерактивному терміналі й лишає звичайний текст у перенаправленні. `--color always` фарбує також канали та логи. |
+| `--color-theme` | `cassette` | Вбудована тема (`cassette`, `neon-tape`, `mono`, `vinyl`) або власна тема з `themes.ini`. |
+| `--themes-file` | поруч із конфігом | Шлях до власного `themes.ini`. За замовчуванням файл лежить поруч із `trackfetch.ini`. |
+| `--lyrics` / `--no-lyrics` | увімкнено | Вбудовувати текст із LRCLIB у теги файлу. Звичайний текст пишеться в `USLT` (MP3), `©lyr` (M4A) або `LYRICS` (Opus), синхронізований — ще й у тег свого формату. Якщо тексту немає, завантаження не вважається помилкою. |
+| `--cache` / `--no-cache` | увімкнено | Використовувати й оновлювати `metadata-cache.json` у теці виводу. Вимкни, щоб щоразу запитувати провайдерів заново. |
 
 ```bash
 trackfetch songs.txt -o ~/Music/RoadTrip          # зберегти в конкретну теку
@@ -216,6 +220,78 @@ trackfetch big-list.txt -s deezer,itunes,musicbrainz
 trackfetch big-list.txt --disable-sources spotify  # явно пропустити Spotify
 trackfetch --list-sources
 ```
+
+### Кольорові теми
+
+Вивід розфарбований за замовчуванням темою **Cassette**. Колір підкреслює
+структуру — мітки, статуси, прогрес і розділювачі, — а назви треків, шляхи та
+причини помилок лишаються звичайним текстом. Іншу тему можна вибрати прапорцем
+або ключем конфігу:
+
+| Налаштування | За замовчуванням | Що робить |
+| --- | --- | --- |
+| `--color` / `color` | `auto` | `auto`, `always` або `never`. `auto` фарбує термінал і лишає звичайний текст у каналах. |
+| `--color-theme` / `color_theme` | `cassette` | `cassette`, `neon-tape`, `mono`, `vinyl` або назва власної теми. |
+| `--themes-file` / `themes_file` | поруч із конфігом | Власний `themes.ini` з темами й кольорами. |
+
+`trackfetch -h` використовує ту саму тему, що й решта виводу, зокрема
+заголовки секцій, прапорці, метавари, варіанти вибору та позначки
+`(default: ...)`. Тему обрано до побудови тексту довідки, тому
+`trackfetch --color always --color-theme vinyl -h` уже кольоровий, а тема з
+конфігу застосовується і до довідки.
+
+<table>
+  <tr>
+    <td align="center">
+      <a href="docs/theme-previews/cassette.svg"><img src="docs/theme-previews/cassette-mini.svg" width="300" alt="Тема Cassette"></a><br>
+      <sub><b>Cassette</b> — за замовчуванням</sub>
+    </td>
+    <td align="center">
+      <a href="docs/theme-previews/neon-tape.svg"><img src="docs/theme-previews/neon-tape-mini.svg" width="300" alt="Тема Neon Tape"></a><br>
+      <sub><b>Neon Tape</b> — бірюзовий і маджента</sub>
+    </td>
+  </tr>
+  <tr>
+    <td align="center">
+      <a href="docs/theme-previews/mono.svg"><img src="docs/theme-previews/mono-mini.svg" width="300" alt="Тема Mono"></a><br>
+      <sub><b>Mono</b> — без кольору</sub>
+    </td>
+    <td align="center">
+      <a href="docs/theme-previews/vinyl.svg"><img src="docs/theme-previews/vinyl-mini.svg" width="300" alt="Тема Vinyl"></a><br>
+      <sub><b>Vinyl</b> — маджента й золото</sub>
+    </td>
+  </tr>
+</table>
+
+```bash
+trackfetch songs.txt --color never                 # чисті логи й канали
+trackfetch songs.txt --color-theme mono            # інша вбудована тема
+trackfetch songs.txt --color-theme sunset          # тема з themes.ini
+```
+
+Власні теми, усі ролі, формати кольорів, розташування файлів і пріоритет
+налаштувань описано в **[Кольорових темах](docs/color-themes.md)**. Власна
+тема — це секція INI поруч із конфігом; готовий приклад лежить у
+[`examples/themes.ini`](examples/themes.ini):
+
+```ini
+# ~/.config/trackfetch/themes.ini
+[sunset]
+base = cassette
+accent = #ff8800
+progress = 208
+success = bright-green
+```
+
+```ini
+# ~/.config/trackfetch/trackfetch.ini
+[trackfetch]
+color = auto
+color_theme = sunset
+```
+
+Для звичайного тексту задайте `NO_COLOR=1` або `color = never`. Прапорець
+`--color always` перекриває і `NO_COLOR`, і `TERM=dumb`.
 
 ### Джерела метаданих
 
@@ -272,33 +348,33 @@ MIME тип. MP3 і Opus можуть вбудовувати всі чотири
 
 ### Текст пісні
 
-Для MP3 trackfetch також шукає текст на [LRCLIB](https://lrclib.net/) і
-вбудовує його в ID3-теги, щоб плеєр показував слова без інтернету та окремих
-файлів `.lrc` чи `.txt`.
+Для всіх форматів trackfetch також шукає текст на [LRCLIB](https://lrclib.net/)
+і вбудовує його в теги, щоб плеєр показував слова без інтернету та окремих
+файлів `.lrc` чи `.txt`. Кожен формат використовує свій стандартний тег.
 
-| Фрейм | Вміст |
-| --- | --- |
-| `USLT` | Повний звичайний текст без таймкодів. |
-| `SYLT` | Рядки з часовими мітками, лише якщо джерело повернуло синхронізований текст. |
+| Формат | Звичайний текст | Синхронізований текст |
+| --- | --- | --- |
+| `mp3` | ID3 `USLT` | ID3 `SYLT`, лише якщо джерело повернуло синхронізований текст |
+| `m4a` | атом `©lyr` | freeform-атом `SYNCEDLYRICS` (`com.apple.iTunes`), вихідний LRC |
+| `opus` | Vorbis-коментар `LYRICS` | Vorbis-коментар `SYNCEDLYRICS`, вихідний LRC |
 
-Якщо синхронізований текст є, записуються обидва фрейми: `USLT` потрібен
-плеєрам без підтримки `SYLT`. Якщо є лише звичайний текст, записується тільки
-`USLT`. Штучні таймкоди не створюються.
+Якщо синхронізований текст є, записуються обидва теги: звичайний текст
+залишається доступним плеєрам без підтримки синхронізованого тексту. Якщо є
+лише звичайний текст, записується тільки він. Штучні таймкоди не створюються.
 
 Джерело — LRCLIB, ключ API не потрібен. За замовчуванням вбудовування
-увімкнено для MP3; вимкнути можна прапорцем `--no-lyrics` або рядком
-`lyrics_enabled = false` у конфігу. На формати `m4a` та `opus` це
-налаштування не впливає.
+увімкнено для всіх трьох форматів; вимкнути можна прапорцем `--no-lyrics` або
+рядком `lyrics_enabled = false` у конфігу.
 
 Якщо текст не знайдено, сталася помилка мережі або сервер повернув помилку,
-завантаження не переривається: MP3 зберігається зі звичайними метаданими. Якщо
-у файлі вже був текст, а новий не знайдено, старі фрейми залишаються. Коли
-знайдено новий текст, попередні `USLT`/`SYLT` замінюються, а не дублюються.
+завантаження не переривається: файл зберігається зі звичайними метаданими. Якщо
+у файлі вже був текст, а новий не знайдено, старі теги залишаються. Коли
+знайдено новий текст, попередні теги тексту замінюються, а не дублюються.
 Інші теги, обкладинка й самі аудіодані не перекодовуються й не пошкоджуються.
 
 ```bash
-trackfetch songs.txt --format mp3                 # вбудувати текст (за замовчуванням)
-trackfetch songs.txt --format mp3 --no-lyrics     # не додавати текст у MP3
+trackfetch songs.txt                              # вбудувати текст (за замовчуванням, будь-який формат)
+trackfetch songs.txt --format mp3 --no-lyrics     # не додавати текст у теги
 ```
 
 ### Треки просто в аргументах
@@ -340,6 +416,11 @@ spotify_client_id = твій-client-id
 spotify_client_secret = твій-client-secret
 no_logs = false
 
+# Кольори термінала
+color = auto
+color_theme = cassette
+# themes_file = ~/.config/trackfetch/themes.ini
+
 itunes_enabled = true
 itunes_country = us
 itunes_min_interval = 3.5
@@ -356,8 +437,11 @@ vocadb_min_interval = 0.5
 # Запасна обкладинка YouTube
 youtube_enabled = true
 
-# Вбудовування тексту пісні в теги MP3
+# Вбудовування тексту пісні в теги файлу
 lyrics_enabled = true
+
+# Кеш метаданих (metadata-cache.json у теці виводу)
+cache_enabled = true
 
 # Пороги збігу
 match_threshold = 0.6
@@ -418,11 +502,11 @@ trackfetch songs.txt --spotify-client-id твій-id --spotify-client-secret т�
 
 | Формат | Що отримуєш | Де грає |
 | --- | --- | --- |
-| `m4a` (за замовчуванням) | **Оригінальний** звук YouTube в AAC, якщо він є, скопійований без перекодування | пристрої Apple, iTunes, більшість плеєрів |
-| `opus` | **Оригінальний** звук YouTube в Opus, скопійований без перекодування. Найкраща доступна якість | більшість сучасних плеєрів, Android, браузери; не iTunes і не старі пристрої |
 | `mp3` (за замовчуванням) | Звук YouTube, **перекодований** у MP3 VBR максимальної якості. Це повторне стиснення з втратами, тому трохи гірше за оригінал | усюди, зокрема старі плеєри й автомагнітоли |
+| `m4a` | **Оригінальний** звук YouTube в AAC, якщо він є, скопійований без перекодування | пристрої Apple, iTunes, більшість плеєрів |
+| `opus` | **Оригінальний** звук YouTube в Opus, скопійований без перекодування. Найкраща доступна якість | більшість сучасних плеєрів, Android, браузери; не iTunes і не старі пристрої |
 
-У всіх трьох форматах однакові метадані й вбудована обкладинка. Текст пісні вбудовується лише в MP3. `done.txt` не враховує формат, тому для кожного формату вказуй окрему теку `-o`.
+У всіх трьох форматах однакові метадані, вбудована обкладинка й текст пісні. `done.txt` не враховує формат, тому для кожного формату вказуй окрему теку `-o`.
 
 ### Вхідний файл
 

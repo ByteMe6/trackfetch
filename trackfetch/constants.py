@@ -8,8 +8,9 @@ YTDLP_REMOTE_COMPONENTS = "ejs:github"
 CONFIG_SECTION = "trackfetch"
 CONFIG_FILENAME = "trackfetch.ini"
 CONFIG_ENV = "TRACKFETCH_CONFIG"
+THEMES_FILENAME = "themes.ini"
 
-DEFAULT_FORMAT = "m4a"
+DEFAULT_FORMAT = "mp3"
 DEFAULT_DELAY = 1.0
 MAX_FILENAME_BYTES = 200
 
@@ -25,7 +26,7 @@ AUDIO_FORMATS = {
     ],
 }
 
-VERSION = "2.2.6"
+VERSION = "2.2.9"
 USER_AGENT = (
     f"trackfetch/{VERSION} "
     "(https://github.com/ByteMe6/trackfetch)"
@@ -76,12 +77,18 @@ LYRICS_TIMEOUT = 15
 LYRICS_MIN_INTERVAL = 0.5
 LRCLIB_SEARCH_URL = "https://lrclib.net/api/search"
 
+M4A_LYRICS_KEY = "\xa9lyr"
+M4A_SYNCED_LYRICS_KEY = "----:com.apple.iTunes:SYNCEDLYRICS"
+OPUS_LYRICS_KEY = "LYRICS"
+OPUS_SYNCED_LYRICS_KEY = "SYNCEDLYRICS"
+
 LRC_TIMESTAMP_RE = re.compile(
     r"\[(\d{1,3}):(\d{2})(?:[.:](\d{1,3}))?\]"
 )
 
 CACHE_FILENAME = "metadata-cache.json"
 CACHE_VERSION = 1
+CACHE_DEFAULT_ENABLED = True
 
 PROVIDER_OPTIONS = {
     "spotify": {"enabled", "min_interval"},

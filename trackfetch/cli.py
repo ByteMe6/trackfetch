@@ -3,11 +3,14 @@
 
 import argparse
 import configparser
+import contextlib
+import io
 import math
 import sys
 import time
 from pathlib import Path
 
+from . import colors
 from .config import build_source_config, config_str_value, format_source_list
 from .constants import (
     AUDIO_FORMATS,
@@ -18,9 +21,9 @@ from .constants import (
     METADATA_PROVIDERS,
 )
 from .files import append_line, parse_song, read_done, read_song_file
-from .pipeline import process_song
-from .runtime import MetadataCache, MetadataRuntime, RateLimiter
+from .helpfmt import TrackFetchHelpFormatter
 from .settings import apply_config, load_config, resolve_output
+from .themes import find_theme_file, load_theme_file
 
 
 def collect_sources(args, settings):
@@ -74,30 +77,63 @@ def collect_sources(args, settings):
 
     return sources
 
-def main():
-    try:
-        sys.stdout.reconfigure(line_buffering=True)
+def format_summary(label_text, value, role):
+    """Color a summary label and value, muting zero counts."""
+    value_style = role if value else "muted"
+    return (
+        f"{colors.paint(label_text, role, 'bold')} "
+        f"{colors.paint(value, value_style)}"
+    )
 
-    except (AttributeError, ValueError):
-        pass
 
+CONFIG_PATHS = (
+    "--config PATH",
+    "$TRACKFETCH_CONFIG",
+    "./trackfetch.ini",
+    "$XDG_CONFIG_HOME/trackfetch/trackfetch.ini",
+    "~/.config/trackfetch/trackfetch.ini",
+    "~/.trackfetch.ini",
+)
+
+EPILOG = "\n".join(
+    (
+        "Config:",
+        "Lookup order, first found wins:",
+        *(f"  {path}" for path in CONFIG_PATHS),
+        "",
+        "A flag wins over the config file, and the config file wins over "
+        "the built-in default.",
+        "",
+        "Examples:",
+        "  trackfetch songs.txt",
+        "  trackfetch --track 'Daft Punk - One More Time'",
+        "  trackfetch -o ~/Music -f m4a songs.txt",
+        "  trackfetch --list-sources --color never",
+    )
+)
+
+
+def build_parser():
+    """Build the argument parser (shared with the help tests)."""
     parser = argparse.ArgumentParser(
+        prog="trackfetch",
+        usage="%(prog)s [OPTIONS] [INPUT ...]",
         description=(
             "Download music using configurable free metadata "
             "sources and YouTube audio"
         ),
-        epilog=(
-            "A config file with the defaults can be used as well. It is "
-            "looked up in --config, $TRACKFETCH_CONFIG, ./trackfetch.ini, "
-            "$XDG_CONFIG_HOME/trackfetch/trackfetch.ini, "
-            "~/.config/trackfetch/trackfetch.ini and ~/.trackfetch.ini. "
-            "A command-line flag wins over the config file, and the config "
-            "file wins over the built-in default."
-        ),
-        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog=EPILOG,
+        formatter_class=TrackFetchHelpFormatter,
+        add_help=False,
     )
 
-    parser.add_argument(
+    # Python 3.14+ colors help itself when stdout is a TTY; that would clash
+    # with our own theme coloring and inflate the measured widths.
+    parser.color = False
+
+    input_group = parser.add_argument_group("Input")
+
+    input_group.add_argument(
         "inputs",
         nargs="*",
         metavar="INPUT",
@@ -107,7 +143,7 @@ def main():
         ),
     )
 
-    parser.add_argument(
+    input_group.add_argument(
         "--track",
         action="append",
         nargs="+",
@@ -118,7 +154,9 @@ def main():
         ),
     )
 
-    parser.add_argument(
+    output_group = parser.add_argument_group("Output")
+
+    output_group.add_argument(
         "-o",
         "--output",
         type=Path,
@@ -130,39 +168,24 @@ def main():
         ),
     )
 
-    parser.add_argument(
-        "--config",
-        type=Path,
-        default=None,
-        help=(
-            "Path to a config file "
-            "(default: auto-detected, see below)"
-        ),
-    )
-
-    parser.add_argument(
+    output_group.add_argument(
         "-f",
         "--format",
         choices=list(AUDIO_FORMATS),
         default=None,
-        help="Audio format (default: m4a)",
+        help="Audio format (default: mp3)",
     )
 
-    parser.add_argument(
+    output_group.add_argument(
         "--title-only",
         action="store_true",
         default=None,
         help="Use only title in filename (default: off)",
     )
 
-    parser.add_argument(
-        "--delay",
-        type=float,
-        default=None,
-        help="Delay between songs in seconds (default: 1.0)",
-    )
+    metadata_group = parser.add_argument_group("Metadata")
 
-    parser.add_argument(
+    metadata_group.add_argument(
         "-s",
         "--metadata-sources",
         default=None,
@@ -174,7 +197,7 @@ def main():
         ),
     )
 
-    parser.add_argument(
+    metadata_group.add_argument(
         "--disable-sources",
         default=None,
         metavar="SOURCES",
@@ -184,7 +207,7 @@ def main():
         ),
     )
 
-    parser.add_argument(
+    metadata_group.add_argument(
         "--provider-opt",
         action="append",
         default=None,
@@ -195,7 +218,7 @@ def main():
         ),
     )
 
-    parser.add_argument(
+    metadata_group.add_argument(
         "--match-threshold",
         type=float,
         default=None,
@@ -203,7 +226,7 @@ def main():
         help="Minimum overall match score, 0.0-1.0 (default: 0.6)",
     )
 
-    parser.add_argument(
+    metadata_group.add_argument(
         "--title-threshold",
         type=float,
         default=None,
@@ -211,26 +234,53 @@ def main():
         help="Minimum title similarity, 0.0-1.0 (default: 0.8)",
     )
 
-    parser.add_argument(
+    metadata_group.add_argument(
         "--list-sources",
         action="store_true",
         default=None,
         help="List available metadata sources and exit",
     )
 
-    parser.add_argument(
+    metadata_group.add_argument(
         "--spotify-client-id",
         default=None,
         help="Spotify client ID (overrides the config file and the env)",
     )
 
-    parser.add_argument(
+    metadata_group.add_argument(
         "--spotify-client-secret",
         default=None,
         help="Spotify client secret (overrides the config file and the env)",
     )
 
-    parser.add_argument(
+    behavior_group = parser.add_argument_group("Behavior")
+
+    behavior_group.add_argument(
+        "-h",
+        "--help",
+        action="help",
+        default=argparse.SUPPRESS,
+        help="Show this help message and exit",
+    )
+
+    behavior_group.add_argument(
+        "--config",
+        type=Path,
+        default=None,
+        help=(
+            "Path to a config file "
+            "(default: auto-detected, see below)"
+        ),
+    )
+
+    behavior_group.add_argument(
+        "--delay",
+        type=float,
+        default=None,
+        help="Delay between songs in seconds (default: 1.0)",
+    )
+
+    behavior_group.add_argument(
         "--no-logs",
         action="store_true",
         default=None,
@@ -240,42 +290,235 @@ def main():
         ),
     )
 
-    parser.add_argument(
+    behavior_group.add_argument(
         "--lyrics",
         action=argparse.BooleanOptionalAction,
         default=None,
         dest="lyrics_enabled",
         help=(
-            "Embed lyrics from LRCLIB into MP3 tags as USLT and, when "
-            "timed lyrics are available, SYLT (default: on)"
+            "Embed lyrics from LRCLIB into the tags: ID3 USLT/SYLT for MP3, "
+            "©lyr for M4A, LYRICS for Opus (default: on)"
         ),
     )
 
+    behavior_group.add_argument(
+        "--cache",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        dest="cache_enabled",
+        help=(
+            "Reuse and update metadata-cache.json in the output directory "
+            "(default: on)"
+        ),
+    )
+
+    appearance_group = parser.add_argument_group("Appearance")
+
+    appearance_group.add_argument(
+        "--color",
+        choices=("auto", "always", "never"),
+        default=None,
+        help=(
+            "Colorize terminal output: auto (default), always or never. "
+            "Color is on by default and off when output is redirected"
+        ),
+    )
+
+    appearance_group.add_argument(
+        "--color-theme",
+        default=None,
+        metavar="THEME",
+        help=(
+            "Color theme: cassette (default), neon-tape, mono, vinyl "
+            "or a theme from themes.ini"
+        ),
+    )
+
+    appearance_group.add_argument(
+        "--themes-file",
+        type=Path,
+        default=None,
+        help=(
+            "Custom theme file (default: themes.ini next to the config file)"
+        ),
+    )
+
+    return parser
+
+
+def early_color_mode(argv):
+    """Read --color before parsing so -h can honor it.
+
+    ``argparse`` prints help and exits from inside ``parse_args``, before the
+    parsed value is available, so the mode has to be known up front.
+    """
+    for index, arg in enumerate(argv):
+        if arg == "--color" and index + 1 < len(argv):
+            return argv[index + 1]
+
+        if arg.startswith("--color="):
+            return arg.split("=", 1)[1]
+
+    return colors.DEFAULT_COLOR_MODE
+
+
+def _help_preparse(argv):
+    """Parse only the options that decide how help itself is rendered."""
+    pre = argparse.ArgumentParser(add_help=False, allow_abbrev=False)
+    pre.add_argument("--color")
+    pre.add_argument("--color-theme")
+    pre.add_argument("--themes-file")
+    pre.add_argument("--config", type=Path)
+
+    try:
+        with contextlib.redirect_stderr(io.StringIO()):
+            options, _unknown = pre.parse_known_args(argv)
+
+    except SystemExit:
+        return None
+
+    return options
+
+
+def _warn(message):
+    print(f"WARNING: {message}", file=sys.stderr)
+
+
+def help_requested(argv):
+    """Return whether this run only asks for help."""
+    return any(arg in ("-h", "--help") for arg in argv)
+
+
+def prepare_help_style(argv):
+    """Apply color mode and theme before argparse renders ``-h``.
+
+    The precedence matches the rest of the program: a flag wins over the
+    config file, which wins over the built-in default. Any problem falls back
+    to the default theme with a warning on stderr, so help always prints.
+    """
+    if not help_requested(argv):
+        return
+
+    options = _help_preparse(argv)
+
+    if options is None:
+        return
+
+    try:
+        settings, config_path = load_config(options.config)
+
+    except (FileNotFoundError, configparser.Error) as error:
+        _warn(f"Ignoring config for help output: {error}")
+        settings, config_path = {}, None
+
+    mode = (
+        options.color
+        or config_str_value(settings, "color")
+        or colors.DEFAULT_COLOR_MODE
+    )
+
+    try:
+        colors.set_color_mode(mode)
+
+    except ValueError as error:
+        _warn(f"{error}; using {colors.DEFAULT_COLOR_MODE} for help")
+        colors.set_color_mode(colors.DEFAULT_COLOR_MODE)
+
+    explicit_themes_file = (
+        options.themes_file
+        or config_str_value(settings, "themes_file")
+    )
+
+    try:
+        theme_path = find_theme_file(explicit_themes_file, config_path)
+        load_theme_file(theme_path, required=bool(explicit_themes_file))
+
+    except (OSError, ValueError) as error:
+        _warn(f"Ignoring themes for help output: {error}")
+
+    theme = (
+        options.color_theme
+        or config_str_value(settings, "color_theme")
+        or colors.DEFAULT_THEME
+    )
+
+    try:
+        colors.set_theme(theme)
+
+    except ValueError as error:
+        _warn(f"{error}; using {colors.DEFAULT_THEME} for help")
+        colors.set_theme(colors.DEFAULT_THEME)
+
+
+def main():
+    try:
+        sys.stdout.reconfigure(line_buffering=True)
+
+    except (AttributeError, ValueError):
+        pass
+
+    try:
+        colors.set_color_mode(early_color_mode(sys.argv[1:]))
+
+    except ValueError:
+        pass
+
+    prepare_help_style(sys.argv[1:])
+
+    parser = build_parser()
+
     args = parser.parse_args()
+
+    colors.set_color_mode(args.color or colors.DEFAULT_COLOR_MODE)
+    colors.set_theme(colors.DEFAULT_THEME)
 
     try:
         settings, config_path = load_config(args.config)
 
     except FileNotFoundError as error:
-        print(f"ERROR: {error}")
+        print(colors.error(f"ERROR: {error}"))
         sys.exit(1)
 
     except configparser.Error as error:
-        print(f"ERROR: Invalid config file: {error}")
+        print(colors.error(f"ERROR: Invalid config file: {error}"))
+        sys.exit(1)
+
+    explicit_themes_file = (
+        args.themes_file
+        or config_str_value(settings, "themes_file")
+    )
+
+    try:
+        theme_path = find_theme_file(explicit_themes_file, config_path)
+        load_theme_file(theme_path, required=bool(explicit_themes_file))
+
+    except (OSError, ValueError) as error:
+        print(colors.error(f"ERROR: {error}"))
         sys.exit(1)
 
     try:
         apply_config(args, parser, settings)
 
     except ValueError as error:
-        print(f"ERROR: {error}")
+        print(colors.error(f"ERROR: {error}"))
+        sys.exit(1)
+
+    args.color = args.color or colors.DEFAULT_COLOR_MODE
+    args.color_theme = args.color_theme or colors.DEFAULT_THEME
+    colors.set_color_mode(args.color)
+
+    try:
+        colors.set_theme(args.color_theme)
+
+    except ValueError as error:
+        print(colors.error(f"ERROR: {error}"))
         sys.exit(1)
 
     try:
         source_config = build_source_config(args, settings)
 
     except ValueError as error:
-        print(f"ERROR: {error}")
+        print(colors.error(f"ERROR: {error}"))
         sys.exit(1)
 
     if args.list_sources:
@@ -298,30 +541,32 @@ def main():
         args.no_logs = False
 
     if not math.isfinite(args.delay):
-        print(f"ERROR: Delay must be a finite number: {args.delay}")
+        print(colors.error(f"ERROR: Delay must be a finite number: {args.delay}"))
         sys.exit(1)
 
     if args.delay < 0:
-        print(f"ERROR: Delay must not be negative: {args.delay}")
+        print(colors.error(f"ERROR: Delay must not be negative: {args.delay}"))
         sys.exit(1)
 
     try:
         sources = collect_sources(args, settings)
 
     except ValueError as error:
-        print(f"ERROR: {error}")
+        print(colors.error(f"ERROR: {error}"))
         sys.exit(1)
 
     if not sources:
         print(
-            "ERROR: No input. "
-            "Pass a file or an inline 'Artist - Title' track, "
-            "or set 'input' in the config file."
+            colors.error(
+                "ERROR: No input. "
+                "Pass a file or an inline 'Artist - Title' track, "
+                "or set 'input' in the config file."
+            )
         )
         sys.exit(1)
 
     if args.output.exists() and not args.output.is_dir():
-        print(f"ERROR: Output path is not a directory: {args.output}")
+        print(colors.error(f"ERROR: Output path is not a directory: {args.output}"))
         sys.exit(1)
 
     songs = []
@@ -344,7 +589,7 @@ def main():
                 songs.append(song)
 
     if not songs:
-        print("No songs to download.")
+        print(colors.warning("No songs to download."))
         sys.exit(0)
 
     unique_songs = []
@@ -378,48 +623,70 @@ def main():
         failed_file = None
         done = set()
 
-    print(f"Found {len(songs)} songs")
+    print(f"{colors.label('Found')} {len(songs)} songs")
 
     if duplicates:
-        print(f"Removed {duplicates} duplicate(s)")
+        print(f"{colors.label('Removed')} {duplicates} duplicate(s)")
 
     if not args.no_logs:
-        print(f"Already completed: {len(done)} (from done.txt)")
+        print(
+            f"{colors.label('Already completed:')} {len(done)} "
+            f"{colors.muted('(from done.txt)')}"
+        )
 
     if skipped_lines:
         print(
-            f"WARNING: skipped {len(skipped_lines)} line(s) "
-            f"that are not 'Artist - Title':"
+            colors.warning(
+                f"WARNING: skipped {len(skipped_lines)} line(s) "
+                f"that are not 'Artist - Title':"
+            )
         )
 
         for path, line in skipped_lines[:5]:
-            print(f"  {path}: {line}")
+            print(f"  {colors.muted(path)}: {line}")
 
         if len(skipped_lines) > 5:
-            print(f"  ... and {len(skipped_lines) - 5} more")
+            print(colors.muted(f"  ... and {len(skipped_lines) - 5} more"))
 
     if config_path:
-        print(f"Config: {config_path}")
+        print(f"{colors.label('Config:')} {config_path}")
 
-    print(f"Output: {args.output}")
+    print(f"{colors.label('Output:')} {args.output}")
 
     print(
-        "Metadata sources: "
-        + (", ".join(source_config.metadata_sources) or "none")
+        f"{colors.label('Metadata sources:')} "
+        + colors.accent(", ".join(source_config.metadata_sources) or "none")
     )
     print(
-        "YouTube artwork fallback: "
-        + ("enabled" if source_config.youtube_enabled else "disabled")
+        f"{colors.label('YouTube artwork fallback:')} "
+        + (
+            colors.success("enabled")
+            if source_config.youtube_enabled
+            else colors.muted("disabled")
+        )
     )
     print(
-        "Lyrics embedding: "
-        + ("enabled (MP3 only)" if source_config.lyrics_enabled else "disabled")
+        f"{colors.label('Lyrics embedding:')} "
+        + (
+            colors.success("enabled (all formats)")
+            if source_config.lyrics_enabled
+            else colors.muted("disabled")
+        )
     )
 
     sys.stdout.flush()
 
+    # Imported here so a plain -h or --list-sources run never pays for
+    # requests, mutagen, spotipy and the provider stack.
+    from .pipeline import process_song
+    from .runtime import MetadataCache, MetadataRuntime, RateLimiter
+
     runtime = MetadataRuntime(
-        cache=MetadataCache(args.output / CACHE_FILENAME),
+        cache=(
+            MetadataCache(args.output / CACHE_FILENAME)
+            if source_config.cache_enabled
+            else None
+        ),
         limiter=RateLimiter(
             {
                 name: source_config.interval(name)
@@ -441,12 +708,12 @@ def main():
         song_key = f"{artist} - {title}"
 
         print()
-        print("=" * 60)
-        print(f"[{number}/{len(songs)}]")
-        print(song_key)
+        print(colors.frame("=" * 60))
+        print(colors.progress(f"[{number}/{len(songs)}]"))
+        print(colors.paint(song_key, "text", "bold"))
 
         if song_key in done:
-            print("SKIP: already completed")
+            print(colors.skip("SKIP: already completed"))
             skipped += 1
             continue
 
@@ -489,13 +756,12 @@ def main():
             time.sleep(args.delay)
 
     print()
-    print("=" * 60)
-    print("FINISHED")
-    print(f"SUCCESS: {success}")
-    print(f"SKIPPED: {skipped}")
-    print(f"FAILED: {failed}")
+    print(colors.frame("=" * 60))
+    print(colors.heading("FINISHED"))
+    print(format_summary("SUCCESS:", success, "success"))
+    print(format_summary("SKIPPED:", skipped, "skip"))
+    print(format_summary("FAILED:", failed, "error"))
 
     if not args.no_logs:
-        print(f"DONE FILE: {done_file}")
-        print(f"FAILED FILE: {failed_file}")
-
+        print(f"{colors.label('DONE FILE:')} {colors.muted(done_file)}")
+        print(f"{colors.label('FAILED FILE:')} {colors.muted(failed_file)}")

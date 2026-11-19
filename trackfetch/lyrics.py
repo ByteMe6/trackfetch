@@ -11,6 +11,10 @@ from .constants import (
     LRCLIB_SEARCH_URL,
     LYRICS_LANGUAGE,
     LYRICS_TIMEOUT,
+    M4A_LYRICS_KEY,
+    M4A_SYNCED_LYRICS_KEY,
+    OPUS_LYRICS_KEY,
+    OPUS_SYNCED_LYRICS_KEY,
     USER_AGENT,
 )
 from .errors import ProviderError
@@ -160,17 +164,29 @@ def fetch_lyrics(
     return select_lyrics(results, artist, title)
 
 
+def split_lyrics(lyrics):
+    """Return plain text and timed entries, deriving the text when needed.
+
+    Some sources only return timed lyrics. Plain text still has to exist for
+    players without timed-lyrics support, so the timestamps are stripped
+    without inventing new ones.
+    """
+    plain = (lyrics.get("plain") or "").strip()
+    synced_entries = parse_synced_lyrics(lyrics.get("synced") or "")
+
+    if not plain and synced_entries:
+        plain = "\n".join(line for line, _ in synced_entries)
+
+    return plain, synced_entries
+
+
 def add_mp3_lyrics(audio, lyrics):
     """Add or replace USLT/SYLT frames without touching other ID3 tags."""
     if not lyrics:
         # No new lyrics is not a reason to delete lyrics that are already there.
         return
 
-    plain = (lyrics.get("plain") or "").strip()
-    synced_entries = parse_synced_lyrics(lyrics.get("synced") or "")
-
-    if not plain and synced_entries:
-        plain = "\n".join(line for line, _ in synced_entries)
+    plain, synced_entries = split_lyrics(lyrics)
 
     if not plain and not synced_entries:
         return
@@ -199,3 +215,67 @@ def add_mp3_lyrics(audio, lyrics):
                 text=synced_entries,
             )
         )
+
+
+def lrc_text(lyrics):
+    """Return the raw timed lyrics text, or None when there are none."""
+    synced = (lyrics.get("synced") or "").strip()
+
+    return synced or None
+
+
+def add_m4a_lyrics(audio, lyrics):
+    """Add or replace lyrics atoms in an MP4/M4A file.
+
+    Plain text goes to the standard ``©lyr`` atom that iTunes and most
+    players understand. Timed lyrics have no standard atom, so the raw LRC
+    text is kept in the ``SYNCEDLYRICS`` freeform atom.
+    """
+    if not lyrics:
+        # No new lyrics is not a reason to delete lyrics that are already there.
+        return
+
+    plain, synced_entries = split_lyrics(lyrics)
+
+    if not plain and not synced_entries:
+        return
+
+    for key in (M4A_LYRICS_KEY, M4A_SYNCED_LYRICS_KEY):
+        if key in audio:
+            del audio[key]
+
+    if plain:
+        audio[M4A_LYRICS_KEY] = [plain]
+
+    synced = lrc_text(lyrics)
+
+    if synced_entries and synced:
+        audio[M4A_SYNCED_LYRICS_KEY] = [synced.encode("utf-8")]
+
+
+def add_opus_lyrics(audio, lyrics):
+    """Add or replace lyrics comments in an Ogg Opus/Vorbis file.
+
+    Plain text goes to ``LYRICS`` and timed lyrics to ``SYNCEDLYRICS``,
+    which is what most taggers and players look for.
+    """
+    if not lyrics:
+        # No new lyrics is not a reason to delete lyrics that are already there.
+        return
+
+    plain, synced_entries = split_lyrics(lyrics)
+
+    if not plain and not synced_entries:
+        return
+
+    for key in (OPUS_LYRICS_KEY, OPUS_SYNCED_LYRICS_KEY):
+        if key in audio:
+            del audio[key]
+
+    if plain:
+        audio[OPUS_LYRICS_KEY] = plain
+
+    synced = lrc_text(lyrics)
+
+    if synced_entries and synced:
+        audio[OPUS_SYNCED_LYRICS_KEY] = synced

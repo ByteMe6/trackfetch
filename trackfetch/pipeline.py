@@ -5,6 +5,7 @@ import shutil
 import tempfile
 from pathlib import Path
 
+from . import colors
 from .config import build_source_config
 from .constants import LYRICS_DEFAULT_ENABLED
 from .files import make_filename
@@ -54,7 +55,7 @@ def process_song(
         youtube_enabled = source_config.youtube_enabled
 
     print(
-        f"Metadata: "
+        f"{colors.label('Metadata:')} "
         f"{metadata['artist']} - "
         f"{metadata['title']}"
     )
@@ -68,11 +69,11 @@ def process_song(
     final_path = output / filename
 
     if final_path.exists():
-        print(f"SKIP: already exists: {filename}")
+        print(f"{colors.skip('SKIP:')} already exists: {filename}")
         return True, "exists"
 
     if not youtube_enabled:
-        print("FAILED: YouTube is disabled")
+        print(f"{colors.error('FAILED:')} YouTube is disabled")
         return False, "YouTube disabled"
 
     video = find_youtube_video(
@@ -81,7 +82,7 @@ def process_song(
     )
 
     if not video:
-        print("FAILED: No YouTube result")
+        print(f"{colors.error('FAILED:')} No YouTube result")
         return False, "no YouTube result"
 
     video_url = (
@@ -99,7 +100,7 @@ def process_song(
             )
 
     if not video_url:
-        print("FAILED: Invalid YouTube result")
+        print(f"{colors.error('FAILED:')} Invalid YouTube result")
         return False, "invalid YouTube result"
 
     with tempfile.TemporaryDirectory() as temp:
@@ -131,7 +132,7 @@ def process_song(
             else source_config.lyrics_enabled
         )
 
-        if audio_format == "mp3" and lyrics_enabled:
+        if lyrics_enabled:
             lyrics_error = False
 
             try:
@@ -143,14 +144,20 @@ def process_song(
 
             except Exception as error:
                 lyrics_error = True
-                print(f"Lyrics: not found ({error})")
+                print(
+                    f"{colors.label('Lyrics:')} "
+                    f"{colors.muted(f'not found ({error})')}"
+                )
 
             if lyrics:
                 kinds = "plain + timed" if lyrics.get("synced") else "plain"
-                print(f"Lyrics: embedded ({kinds})")
+                print(
+                    f"{colors.label('Lyrics:')} "
+                    f"{colors.success(f'embedded ({kinds})')}"
+                )
 
             elif not lyrics_error:
-                print("Lyrics: not found")
+                print(f"{colors.label('Lyrics:')} {colors.muted('not found')}")
 
         try:
             add_metadata(
@@ -172,6 +179,6 @@ def process_song(
         except Exception as error:
             return False, f"move error: {error}"
 
-    print(f"SUCCESS: {filename}")
+    print(f"{colors.success('SUCCESS:')} {filename}")
 
     return True, "downloaded"

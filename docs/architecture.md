@@ -13,6 +13,8 @@ trackfetch/
 ├── __main__.py          python -m trackfetch
 ├── constants.py         Defaults, provider tables, regexes
 ├── errors.py            ProviderError / ProviderAuthError
+├── colors.py            Built-in color themes and ANSI rendering
+├── themes.py            Custom themes.ini discovery and parsing
 ├── matching.py          Normalization, similarity and candidate scoring
 ├── config.py            SourceConfig, thresholds and provider priority
 ├── settings.py          Config-file discovery and CLI/config precedence
@@ -38,16 +40,80 @@ trackfetch/
 
 Dependencies point in one direction:
 
-```
-constants  errors  matching
-      \       |       /
-   config  settings  runtime
-          \     /
-    providers / youtube / images / lyrics / tags / files
-                \       /
-               pipeline
-                    |
-                   cli
+```mermaid
+flowchart TD
+    subgraph Foundation
+        constants[constants]
+        errors[errors]
+        matching[matching]
+        colors[colors]
+    end
+
+    subgraph Configuration
+        config[config]
+        settings[settings]
+        runtime[runtime]
+        themes[themes]
+    end
+
+    subgraph Sources
+        providers["providers/*"]
+        youtube[youtube]
+        images[images]
+        lyrics[lyrics]
+        tags[tags]
+        files[files]
+    end
+
+    pipeline[pipeline]
+    cli[cli]
+
+    constants --> config
+    errors --> config
+    matching --> config
+    constants --> settings
+    config --> settings
+    constants --> runtime
+    errors --> runtime
+    matching --> runtime
+    colors --> themes
+    constants --> themes
+    settings --> themes
+
+    config --> providers
+    errors --> providers
+    matching --> providers
+    runtime --> providers
+    constants --> youtube
+    matching --> youtube
+    colors --> youtube
+    constants --> images
+    colors --> images
+    youtube --> images
+    constants --> lyrics
+    errors --> lyrics
+    matching --> lyrics
+    constants --> tags
+    images --> tags
+    lyrics --> tags
+    constants --> files
+
+    config --> pipeline
+    colors --> pipeline
+    files --> pipeline
+    images --> pipeline
+    lyrics --> pipeline
+    providers --> pipeline
+    tags --> pipeline
+    youtube --> pipeline
+
+    colors --> cli
+    themes --> cli
+    config --> cli
+    settings --> cli
+    runtime --> cli
+    files --> cli
+    pipeline --> cli
 ```
 
 This keeps the network providers independent from the CLI and makes each

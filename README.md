@@ -182,7 +182,7 @@ trackfetch "My Playlist.txt" -o ~/Music/"My Playlist"
 ## Usage
 
 ```text
-trackfetch [-h] [--track ARTIST - TITLE ...] [-o OUTPUT] [--config CONFIG] [-f {mp3,m4a,opus}] [--title-only] [--delay DELAY] [-s SOURCES] [--disable-sources SOURCES] [--provider-opt NAME.KEY=VALUE] [--match-threshold SCORE] [--title-threshold SCORE] [--list-sources] [--spotify-client-id ID] [--spotify-client-secret SECRET] [--no-logs] [--lyrics | --no-lyrics] [INPUT ...]
+trackfetch [-h] [--track ARTIST - TITLE ...] [-o OUTPUT] [--config CONFIG] [-f {mp3,m4a,opus}] [--title-only] [--delay DELAY] [-s SOURCES] [--disable-sources SOURCES] [--provider-opt NAME.KEY=VALUE] [--match-threshold SCORE] [--title-threshold SCORE] [--list-sources] [--spotify-client-id ID] [--spotify-client-secret SECRET] [--no-logs] [--color {auto,always,never}] [--color-theme THEME] [--themes-file PATH] [--lyrics | --no-lyrics] [INPUT ...]
 ```
 
 | Option | Default | What it does |
@@ -191,7 +191,7 @@ trackfetch [-h] [--track ARTIST - TITLE ...] [-o OUTPUT] [--config CONFIG] [-f {
 | `--track` | — | Track to download inline, `Artist - Title`. Can be given several times. |
 | `-o`, `--output` | current directory | Folder to save the files in. It's created if it doesn't exist. |
 | `--config` | auto-detected | Path to a [config file](#configuration-file). |
-| `-f`, `--format` | `m4a` | Audio format: `mp3`, `m4a` or `opus`. See [Audio formats](#audio-formats). |
+| `-f`, `--format` | `mp3` | Audio format: `mp3`, `m4a` or `opus`. See [Audio formats](#audio-formats). |
 | `--title-only` | off | Name files `Title.m4a` instead of `Artist - Title.m4a` |
 | `--delay` | `1.0` | Seconds to wait between songs. Raise it for long lists. |
 | `-s`, `--metadata-sources` | `itunes` | Comma-separated metadata priority, for example `deezer,itunes,musicbrainz`. `none` disables metadata lookups but keeps YouTube. A CLI selection overrides configured disabling for the selected providers. |
@@ -203,7 +203,11 @@ trackfetch [-h] [--track ARTIST - TITLE ...] [-o OUTPUT] [--config CONFIG] [-f {
 | `--spotify-client-id` | `$SPOTIFY_CLIENT_ID` | Spotify API client ID. See [Spotify credentials](#spotify-credentials). |
 | `--spotify-client-secret` | `$SPOTIFY_CLIENT_SECRET` | Spotify API client secret. |
 | `--no-logs` | off | Do not read `done.txt` and do not write `done.txt` or `failed.txt`. Progress from earlier runs is ignored, so finished songs are not skipped. |
-| `--lyrics` / `--no-lyrics` | on | Embed lyrics fetched from LRCLIB into MP3 tags. Plain text goes to `USLT`; timed lyrics also go to `SYLT`. Missing lyrics never fail the download. |
+| `--color` | `auto` | Colorize output: `auto`, `always` or `never`. `auto` uses color on an interactive terminal and plain text when redirected. `--color always` also colors pipes and log files. |
+| `--color-theme` | `cassette` | Built-in theme (`cassette`, `neon-tape`, `mono`, `vinyl`) or a custom theme from `themes.ini`. |
+| `--themes-file` | next to the config | Path to a custom `themes.ini`. The default file sits next to `trackfetch.ini`. |
+| `--lyrics` / `--no-lyrics` | on | Embed lyrics fetched from LRCLIB into the file tags. Plain text goes to `USLT` (MP3), `©lyr` (M4A) or `LYRICS` (Opus); timed lyrics also go to the format's timed tag. Missing lyrics never fail the download. |
+| `--cache` / `--no-cache` | on | Reuse and update `metadata-cache.json` in the output directory. Disable to always query the providers. |
 
 ```bash
 trackfetch songs.txt -o ~/Music/RoadTrip          # save to a specific folder
@@ -216,6 +220,77 @@ trackfetch big-list.txt -s deezer,itunes,musicbrainz
 trackfetch big-list.txt --disable-sources spotify  # skip Spotify explicitly
 trackfetch --list-sources
 ```
+
+### Color themes
+
+Output is colored by default with the **Cassette** theme. Color is used for
+structure — labels, statuses, progress and separators — while titles, paths
+and error reasons stay plain. Pick another built-in theme or turn color off:
+
+| Setting | Default | What it does |
+| --- | --- | --- |
+| `--color` / `color` | `auto` | `auto`, `always` or `never`. `auto` colors a terminal and stays plain in pipes. |
+| `--color-theme` / `color_theme` | `cassette` | `cassette`, `neon-tape`, `mono`, `vinyl`, or a custom theme name. |
+| `--themes-file` / `themes_file` | next to the config | Custom `themes.ini` with your own themes and colors. |
+
+`trackfetch -h` uses the same theme as the rest of the output, including the
+section titles, flags, metavars, choices and `(default: ...)` notes. The theme
+is chosen before the help text is built, so `trackfetch --color always
+--color-theme vinyl -h` is already colored, and a theme set in the config
+applies to help as well.
+
+<table>
+  <tr>
+    <td align="center">
+      <a href="docs/theme-previews/cassette.svg"><img src="docs/theme-previews/cassette-mini.svg" width="300" alt="Cassette theme"></a><br>
+      <sub><b>Cassette</b> — default</sub>
+    </td>
+    <td align="center">
+      <a href="docs/theme-previews/neon-tape.svg"><img src="docs/theme-previews/neon-tape-mini.svg" width="300" alt="Neon Tape theme"></a><br>
+      <sub><b>Neon Tape</b> — cyan and magenta</sub>
+    </td>
+  </tr>
+  <tr>
+    <td align="center">
+      <a href="docs/theme-previews/mono.svg"><img src="docs/theme-previews/mono-mini.svg" width="300" alt="Mono theme"></a><br>
+      <sub><b>Mono</b> — no hue</sub>
+    </td>
+    <td align="center">
+      <a href="docs/theme-previews/vinyl.svg"><img src="docs/theme-previews/vinyl-mini.svg" width="300" alt="Vinyl theme"></a><br>
+      <sub><b>Vinyl</b> — magenta and gold</sub>
+    </td>
+  </tr>
+</table>
+
+```bash
+trackfetch songs.txt --color never                 # clean logs and pipes
+trackfetch songs.txt --color-theme mono            # another built-in theme
+trackfetch songs.txt --color-theme sunset          # theme from themes.ini
+```
+
+Custom themes, every role, color formats, file locations and precedence are
+documented in **[Color themes](docs/color-themes.md)**. A custom theme is just
+an INI section next to your config; a ready-to-copy example is in
+[`examples/themes.ini`](examples/themes.ini):
+
+```ini
+# ~/.config/trackfetch/themes.ini
+[sunset]
+base = cassette
+accent = #ff8800
+progress = 208
+success = bright-green
+```
+
+```ini
+# ~/.config/trackfetch/trackfetch.ini
+[trackfetch]
+color = auto
+color_theme = sunset
+```
+
+Set `NO_COLOR=1` or `color = never` for plain output. `--color always`
+overrides both `NO_COLOR` and `TERM=dumb`.
 
 ### Metadata sources
 
@@ -271,34 +346,35 @@ JPEG.
 
 ### Lyrics
 
-For MP3 output trackfetch also looks up lyrics on [LRCLIB](https://lrclib.net/)
-and embeds them in the ID3 tag, so players can show the words offline without
-sidecar `.lrc` or `.txt` files.
+For every output format trackfetch also looks up lyrics on
+[LRCLIB](https://lrclib.net/) and embeds them in the tag container, so players
+can show the words offline without sidecar `.lrc` or `.txt` files. Each format
+uses its own standard tag.
 
-| Frame | Contents |
-| --- | --- |
-| `USLT` | The full plain text, without timestamps. |
-| `SYLT` | Timed lines, only when the source returns synchronized lyrics. |
+| Format | Plain text | Timed lyrics |
+| --- | --- | --- |
+| `mp3` | ID3 `USLT` | ID3 `SYLT`, only when the source returns synchronized lyrics |
+| `m4a` | `©lyr` atom | `SYNCEDLYRICS` freeform atom (`com.apple.iTunes`), raw LRC |
+| `opus` | Vorbis comment `LYRICS` | Vorbis comment `SYNCEDLYRICS`, raw LRC |
 
-When timed lyrics are available, both frames are written: `USLT` keeps the
-full text for players without `SYLT` support. When only plain lyrics are
-available, only `USLT` is written. Timestamps are never invented.
+When timed lyrics are available, both tags are written: the plain text stays
+readable for players without timed-lyrics support. When only plain lyrics are
+available, only the plain tag is written. Timestamps are never invented.
 
 The source is LRCLIB, which needs no API key. Lyrics embedding is enabled by
-default for MP3 and can be turned off with `--no-lyrics` or
-`lyrics_enabled = false` in the config file. The other formats (`m4a`, `opus`)
-are not changed by this option.
+default for all three formats and can be turned off with `--no-lyrics` or
+`lyrics_enabled = false` in the config file.
 
-Missing lyrics, a timeout or an HTTP error never fails the download. The MP3
-is still saved with its usual metadata. If an MP3 already contains lyrics and
-no new lyrics are found, the existing frames are left untouched. When new
-lyrics are found, the old `USLT`/`SYLT` frames are replaced instead of
-duplicated. Existing tags and cover art, and the audio data itself, are never
-rewritten or re-encoded.
+Missing lyrics, a timeout or an HTTP error never fails the download. The file
+is still saved with its usual metadata. If a file already contains lyrics and
+no new lyrics are found, the existing tags are left untouched. When new lyrics
+are found, the old lyrics tags are replaced instead of duplicated. Existing
+tags and cover art, and the audio data itself, are never rewritten or
+re-encoded.
 
 ```bash
-trackfetch songs.txt --format mp3                 # embed lyrics (default)
-trackfetch songs.txt --format mp3 --no-lyrics     # keep MP3 tags lyrics-free
+trackfetch songs.txt                              # embed lyrics (default, any format)
+trackfetch songs.txt --format mp3 --no-lyrics     # keep the tags lyrics-free
 ```
 
 ### Inline tracks
@@ -339,6 +415,11 @@ spotify_client_id = your-client-id
 spotify_client_secret = your-client-secret
 no_logs = false
 
+# Terminal colors
+color = auto
+color_theme = cassette
+# themes_file = ~/.config/trackfetch/themes.ini
+
 itunes_enabled = true
 itunes_country = us
 itunes_min_interval = 3.5
@@ -355,8 +436,11 @@ vocadb_min_interval = 0.5
 # YouTube artwork fallback
 youtube_enabled = true
 
-# Lyrics embedding into MP3 tags
+# Lyrics embedding into file tags
 lyrics_enabled = true
+
+# Metadata cache (metadata-cache.json in the output directory)
+cache_enabled = true
 
 # Matching thresholds
 match_threshold = 0.6
@@ -418,11 +502,11 @@ environment variable.
 
 | Format | What you get | Plays on |
 | --- | --- | --- |
-| `m4a` (default) | YouTube's **original** AAC audio when available, copied without re-encoding | Apple devices, iTunes, most players |
+| `mp3` (default) | YouTube's audio **re-encoded** to the best VBR MP3. A second lossy encode, so slightly below the source | everything, including old players and car stereos |
+| `m4a` | YouTube's **original** AAC audio when available, copied without re-encoding | Apple devices, iTunes, most players |
 | `opus` | YouTube's **original** Opus audio, copied without re-encoding. The best quality you can get | most modern players, Android, browsers; not iTunes or older devices |
-| `mp3` | YouTube's audio **re-encoded** to the best VBR MP3. A second lossy encode, so slightly below the source | everything, including old players and car stereos |
 
-All three get the same metadata tags and embedded cover art. Embedded lyrics are written to MP3 only. `done.txt` doesn't track the format, so use a separate `-o` folder for each format.
+All three get the same metadata tags, embedded cover art and embedded lyrics. `done.txt` doesn't track the format, so use a separate `-o` folder for each format.
 
 ### Input file
 

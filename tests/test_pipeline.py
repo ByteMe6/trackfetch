@@ -148,6 +148,38 @@ class TestProcessSong:
         assert tags["METADATA_BLOCK_PICTURE"]
         assert pipeline["formats"] == ["opus"]
 
+    def test_opus_embeds_lyrics(self, pipeline, tmp_path, monkeypatch):
+        monkeypatch.setattr(
+            m.pipeline,
+            "fetch_lyrics",
+            lambda *args, **kwargs: {
+                "plain": "Words",
+                "synced": "[00:01.00]Words",
+            },
+        )
+
+        assert m.process_song(None, "a", "b", tmp_path, False, "opus") == (True, "downloaded")
+
+        tags = OggOpus(tmp_path / "Daft Punk - One More Time.opus")
+        assert tags["LYRICS"] == ["Words"]
+        assert tags["SYNCEDLYRICS"] == ["[00:01.00]Words"]
+
+    def test_m4a_embeds_lyrics(self, pipeline, tmp_path, monkeypatch):
+        monkeypatch.setattr(
+            m.pipeline,
+            "fetch_lyrics",
+            lambda *args, **kwargs: {
+                "plain": "Words",
+                "synced": "[00:01.00]Words",
+            },
+        )
+
+        assert m.process_song(None, "a", "b", tmp_path, False, "m4a") == (True, "downloaded")
+
+        tags = MP4(tmp_path / "Daft Punk - One More Time.m4a")
+        assert tags["\xa9lyr"] == ["Words"]
+        assert bytes(tags[m.M4A_SYNCED_LYRICS_KEY][0]).decode("utf-8") == "[00:01.00]Words"
+
     def test_m4a(self, pipeline, tmp_path):
         assert m.process_song(None, "a", "b", tmp_path, False, "m4a") == (True, "downloaded")
         tags = MP4(tmp_path / "Daft Punk - One More Time.m4a")
@@ -249,7 +281,7 @@ class TestMain:
         assert "Found 2 songs" in log
         assert "SUCCESS: 1" in log
         assert "FAILED: 1" in log
-        assert (out / "Daft Punk - One More Time.m4a").exists()
+        assert (out / "Daft Punk - One More Time.mp3").exists()
         assert (out / "done.txt").read_text(encoding="utf-8") == "Daft Punk - One More Time\n"
         assert (out / "failed.txt").read_text(
             encoding="utf-8"
@@ -294,7 +326,7 @@ class TestMain:
 
         run_cli(monkeypatch, songs, "-o", out, "--no-logs", "--delay", "0")
 
-        assert (out / "Daft Punk - One More Time.m4a").exists()
+        assert (out / "Daft Punk - One More Time.mp3").exists()
         assert pipeline["downloaded_urls"] == ["https://www.youtube.com/watch?v=abc"]
         assert done.read_text(encoding="utf-8") == "Daft Punk - One More Time\n"
 
@@ -320,7 +352,7 @@ class TestMain:
         run_cli(monkeypatch, songs, "-o", out, "--no-logs", "--delay", "0")
         log = capsys.readouterr().out
 
-        assert (out / "Daft Punk - One More Time.m4a").exists()
+        assert (out / "Daft Punk - One More Time.mp3").exists()
         assert done.read_text(encoding="utf-8") == "Old - Song\n"
         assert failed.read_text(encoding="utf-8") == "Bad - Song | old reason\n"
         assert "DONE FILE" not in log
@@ -360,7 +392,7 @@ class TestMain:
         songs.write_text("Daft Punk - One More Time\n", encoding="utf-8")
         out = tmp_path / "o"
         out.mkdir()
-        (out / "Daft Punk - One More Time.m4a").write_bytes(b"")
+        (out / "Daft Punk - One More Time.mp3").write_bytes(b"")
 
         run_cli(monkeypatch, songs, "-o", out)
         log = capsys.readouterr().out
@@ -376,12 +408,50 @@ class TestMain:
         assert (out / "Daft Punk - One More Time.opus").exists()
         assert pipeline["formats"] == ["opus"]
 
-    def test_default_format_is_m4a(self, pipeline, monkeypatch, tmp_path):
+    def test_default_format_is_mp3(self, pipeline, monkeypatch, tmp_path):
         songs = tmp_path / "songs.txt"
         songs.write_text("Daft Punk - One More Time\n", encoding="utf-8")
 
         run_cli(monkeypatch, songs, "-o", tmp_path / "o")
-        assert pipeline["formats"] == ["m4a"]
+        assert pipeline["formats"] == ["mp3"]
+
+    def test_no_cache_passes_no_cache_to_runtime(self, pipeline, monkeypatch, tmp_path):
+        songs = tmp_path / "songs.txt"
+        songs.write_text("Daft Punk - One More Time\n", encoding="utf-8")
+        seen = {}
+
+        real_process = m.pipeline.process_song
+
+        def spy(*args, **kwargs):
+            seen["cache"] = kwargs["runtime"].cache
+            return real_process(*args, **kwargs)
+
+        monkeypatch.setattr(m.pipeline, "process_song", spy)
+        monkeypatch.setattr(m.cli, "process_song", spy, raising=False)
+
+        run_cli(monkeypatch, songs, "-o", tmp_path / "o", "--no-cache", "--delay", "0")
+
+        assert seen["cache"] is None
+        assert not (tmp_path / "o" / "metadata-cache.json").exists()
+
+    def test_cache_is_enabled_by_default(self, pipeline, monkeypatch, tmp_path):
+        songs = tmp_path / "songs.txt"
+        songs.write_text("Daft Punk - One More Time\n", encoding="utf-8")
+        seen = {}
+
+        real_process = m.pipeline.process_song
+
+        def spy(*args, **kwargs):
+            seen["cache"] = kwargs["runtime"].cache
+            return real_process(*args, **kwargs)
+
+        monkeypatch.setattr(m.pipeline, "process_song", spy)
+        monkeypatch.setattr(m.cli, "process_song", spy, raising=False)
+
+        run_cli(monkeypatch, songs, "-o", tmp_path / "o", "--delay", "0")
+
+        assert isinstance(seen["cache"], m.MetadataCache)
+        assert seen["cache"].path.name == "metadata-cache.json"
 
     def test_rejects_unknown_format(self, monkeypatch, tmp_path, capsys):
         songs = tmp_path / "songs.txt"

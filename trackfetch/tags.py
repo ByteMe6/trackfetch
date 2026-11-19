@@ -10,7 +10,7 @@ from mutagen.mp4 import MP4, MP4Cover
 from mutagen.oggopus import OggOpus
 
 from .images import detect_image_format, image_mime_type
-from .lyrics import add_mp3_lyrics
+from .lyrics import add_m4a_lyrics, add_mp3_lyrics, add_opus_lyrics
 
 
 def add_metadata(
@@ -24,12 +24,14 @@ def add_metadata(
             audio_path,
             cover_path,
             metadata,
+            lyrics,
         )
     elif audio_path.suffix == ".m4a":
         add_m4a_metadata(
             audio_path,
             cover_path,
             metadata,
+            lyrics,
         )
     else:
         add_mp3_metadata(
@@ -135,6 +137,7 @@ def add_opus_metadata(
     opus_path: Path,
     cover_path: Path,
     metadata: dict,
+    lyrics=None,
 ):
     audio = OggOpus(opus_path)
 
@@ -170,6 +173,8 @@ def add_opus_metadata(
                 picture.write()
             ).decode("ascii")
 
+    add_opus_lyrics(audio, lyrics)
+
     audio.save()
 
 
@@ -177,6 +182,7 @@ def add_m4a_metadata(
     m4a_path: Path,
     cover_path: Path,
     metadata: dict,
+    lyrics=None,
 ):
     audio = MP4(m4a_path)
 
@@ -215,5 +221,7 @@ def add_m4a_metadata(
             audio["covr"] = [
                 MP4Cover(image_data, imageformat=MP4Cover.FORMAT_PNG)
             ]
+
+    add_m4a_lyrics(audio, lyrics)
 
     audio.save()
