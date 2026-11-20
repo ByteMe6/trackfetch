@@ -4,7 +4,46 @@ All notable changes to this project are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [2.3.0] - 2026-11-21
+
+### Added
+- A SoundCloud fallback for YouTube videos that fail specifically with an age
+  restriction. trackfetch searches SoundCloud with yt-dlp's `scsearch`, reads
+  metadata for up to five results with `--dump-single-json`, scores title
+  (40%), artist (30%), duration (20%) and metadata consistency (10%), rejects
+  previews, remixes, covers, live and instrumental versions, and downloads only
+  a single confident match. Ambiguous results are printed (and offered as a
+  numbered choice in an interactive terminal) instead of being downloaded
+  blindly. Every other YouTube error keeps the existing handling. Configure it
+  with `--soundcloud/--no-soundcloud`, `--soundcloud-min-score` and
+  `--soundcloud-min-margin`, or the matching config keys. This is a search for
+  an independently available copy, not a bypass of YouTube's age verification.
+
+### Fixed
+- When the three plain YouTube searches find nothing usable, trackfetch now
+  falls back to the YouTube Music search, which is not filtered for some
+  topics the way anonymous YouTube search is. Every candidate is verified
+  against its full video details (close title, matching artist or channel,
+  and known durations within 10 seconds), so unrelated tracks are still
+  rejected.
+- YouTube search now falls back from `<artist> <title>` to `<title>` and
+  `<title> Topic` when the first query returns nothing or no confident match.
+  This finds songs that YouTube hides from the artist query for an anonymous
+  client, while most songs still cost a single yt-dlp call.
+- Artist matching now also compares transliterated (Latin) forms of the artist,
+  video title and channel, so a Latin artist name matches Cyrillic uploads and
+  vice versa. Channel names are used as evidence, and `- Topic` uploads get an
+  extra bonus.
+- Title-only results now need artist evidence (the artist in the title or
+  channel, or a duration within five seconds), which keeps covers, audiobooks
+  and same-title songs by other artists out.
+- YouTube candidates below `YOUTUBE_MIN_SCORE` are rejected instead of always
+  taking the best-scored result.
+- `cover`, `remix` and the other bad-word markers are matched as whole words,
+  so titles such as "Discovery" are no longer penalised.
+- A non-zero yt-dlp search exit code is reported as `yt-dlp search failed`,
+  distinct from `no YouTube result` and `no confident YouTube match` in
+  `failed.txt`.
 
 ## [2.2.11] - 2026-11-19
 
@@ -183,7 +222,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - PyInstaller spec, plus prebuilt binaries for Linux, macOS and Windows on x86_64 and ARM64.
 - Automated releases: pushing a new version to `master` builds and publishes all binaries.
 
-[Unreleased]: https://github.com/ByteMe6/trackfetch/compare/v2.2.11...HEAD
+[Unreleased]: https://github.com/ByteMe6/trackfetch/compare/v2.3.0...HEAD
+[2.3.0]: https://github.com/ByteMe6/trackfetch/releases/tag/v2.3.0
 [2.2.11]: https://github.com/ByteMe6/trackfetch/releases/tag/v2.2.11
 [2.2.10]: https://github.com/ByteMe6/trackfetch/releases/tag/v2.2.10
 [2.2.9]: https://github.com/ByteMe6/trackfetch/releases/tag/v2.2.9

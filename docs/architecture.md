@@ -29,7 +29,8 @@ trackfetch/
 │   ├── duration.py      Millisecond/second duration normalization
 │   ├── registry.py      name -> provider function
 │   └── resolver.py      Priority, cooldowns, cache-aware resolution and fallbacks
-├── youtube.py           Search, scoring and yt-dlp audio download
+├── youtube.py           Search, scoring, age-restriction probe, audio download
+├── soundcloud.py        SoundCloud fallback search, matching and selection
 ├── images.py            Cover detection, download, Pillow normalization and fallback chain
 ├── lyrics.py            LRCLIB lookup, LRC parsing and sidecar writing
 ├── tags.py              MP3 / Opus / M4A tag writers
@@ -89,6 +90,10 @@ flowchart TD
     constants --> youtube
     matching --> youtube
     colors --> youtube
+    constants --> soundcloud
+    errors --> soundcloud
+    matching --> soundcloud
+    colors --> soundcloud
     constants --> images
     colors --> images
     youtube --> images
@@ -108,6 +113,7 @@ flowchart TD
     providers --> pipeline
     tags --> pipeline
     youtube --> pipeline
+    soundcloud --> pipeline
 
     colors --> cli
     themes --> cli
@@ -133,7 +139,14 @@ one registry entry.
   priority, cooldowns and caching live in `providers/resolver.py`.
 - **The pipeline is the only place that knows the full download order.**
   Resolve metadata → pick a filename → search YouTube → download audio →
-  download cover → embed tags and lyrics → move the finished file.
+  download cover → embed tags and lyrics → move the finished file. If,
+  and only if, the download failed specifically because of a YouTube age
+  restriction, the SoundCloud fallback runs once before the song is marked
+  failed.
+- **`soundcloud.py` is pure matching plus two yt-dlp calls.** It never
+  downloads audio; it returns a ranked, filtered candidate list and the
+  pipeline downloads at most one URL. This keeps the scoring testable with
+  plain dictionaries and keeps the download order in the pipeline.
 - **The CLI never implements domain logic.** It parses arguments, builds a
   `SourceConfig`, creates the runtime and loops over songs.
 - **Public names stay re-exported from `trackfetch/__init__.py`.** Tests and
