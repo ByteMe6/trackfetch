@@ -21,6 +21,9 @@ from .constants import (
     METADATA_PROVIDERS,
     PROVIDER_DEFAULTS,
     PROVIDER_OPTIONS,
+    SOUNDCLOUD_DEFAULT_ENABLED,
+    SOUNDCLOUD_MIN_MARGIN,
+    SOUNDCLOUD_MIN_SCORE,
     VOCALOID_HINTS,
     YOUTUBE_DEFAULT_ENABLED,
 )
@@ -40,6 +43,9 @@ class SourceConfig:
         lyrics_enabled=LYRICS_DEFAULT_ENABLED,
         cache_enabled=CACHE_DEFAULT_ENABLED,
         lyrics_type=DEFAULT_LYRICS_TYPE,
+        soundcloud_enabled=SOUNDCLOUD_DEFAULT_ENABLED,
+        soundcloud_min_score=SOUNDCLOUD_MIN_SCORE,
+        soundcloud_min_margin=SOUNDCLOUD_MIN_MARGIN,
     ):
         self.metadata_sources = list(metadata_sources)
         self.youtube_enabled = bool(youtube_enabled)
@@ -50,6 +56,9 @@ class SourceConfig:
         self.lyrics_enabled = bool(lyrics_enabled)
         self.cache_enabled = bool(cache_enabled)
         self.lyrics_type = lyrics_type
+        self.soundcloud_enabled = bool(soundcloud_enabled)
+        self.soundcloud_min_score = soundcloud_min_score
+        self.soundcloud_min_margin = soundcloud_min_margin
 
     def interval(self, name: str) -> float:
         return self.providers[name]["min_interval"]
@@ -90,12 +99,13 @@ def normalize_metadata_sources(value: str):
 
 def normalize_disable_sources(value: str):
     names = []
+    allowed = METADATA_PROVIDERS + ARTWORK_FALLBACKS + ("soundcloud",)
 
     for name in split_source_names(value):
-        if name not in METADATA_PROVIDERS and name not in ARTWORK_FALLBACKS:
+        if name not in allowed:
             raise ValueError(
                 f"Unknown source '{name}' "
-                f"(choose from {', '.join(METADATA_PROVIDERS + ARTWORK_FALLBACKS)})"
+                f"(choose from {', '.join(allowed)})"
             )
 
         if name not in names:
@@ -446,6 +456,44 @@ def build_source_config(args, settings):
         "title_threshold",
     )
 
+    soundcloud_enabled = SOUNDCLOUD_DEFAULT_ENABLED
+
+    if (
+        "soundcloud_enabled" in settings
+        and str(settings["soundcloud_enabled"]).strip()
+    ):
+        soundcloud_enabled = parse_bool(
+            settings["soundcloud_enabled"],
+            "soundcloud_enabled",
+        )
+
+    if "soundcloud" in all_disabled_sources:
+        soundcloud_enabled = False
+
+    cli_soundcloud = getattr(args, "soundcloud_enabled", None)
+
+    if cli_soundcloud is not None:
+        soundcloud_enabled = bool(cli_soundcloud)
+
+    soundcloud_min_score = threshold_value(
+        getattr(args, "soundcloud_min_score", None),
+        threshold_value(
+            settings.get("soundcloud_min_score"),
+            SOUNDCLOUD_MIN_SCORE,
+            "soundcloud_min_score",
+        ),
+        "soundcloud_min_score",
+    )
+    soundcloud_min_margin = threshold_value(
+        getattr(args, "soundcloud_min_margin", None),
+        threshold_value(
+            settings.get("soundcloud_min_margin"),
+            SOUNDCLOUD_MIN_MARGIN,
+            "soundcloud_min_margin",
+        ),
+        "soundcloud_min_margin",
+    )
+
     return SourceConfig(
         sources,
         youtube_enabled,
@@ -456,6 +504,9 @@ def build_source_config(args, settings):
         lyrics_enabled,
         cache_enabled,
         lyrics_type,
+        soundcloud_enabled,
+        soundcloud_min_score,
+        soundcloud_min_margin,
     )
 
 
@@ -545,6 +596,11 @@ def format_source_list(config: SourceConfig) -> str:
         if config.cache_enabled
         else colors.muted("disabled")
     )
+    soundcloud = (
+        colors.success("enabled (age-restricted YouTube only)")
+        if config.soundcloud_enabled
+        else colors.muted("disabled")
+    )
     lines.extend(
         [
             "",
@@ -554,6 +610,7 @@ def format_source_list(config: SourceConfig) -> str:
             f"{colors.label('Title threshold:')} {config.title_threshold}",
             f"{colors.label('Lyrics embedding:')} {lyrics}",
             f"{colors.label('Metadata cache:')} {cache}",
+            f"{colors.label('SoundCloud fallback:')} {soundcloud}",
         ]
     )
 

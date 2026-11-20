@@ -220,6 +220,67 @@ class TestSourceResolution:
 
         assert config.youtube_enabled is False
 
+    def test_soundcloud_is_enabled_by_default(self):
+        config = m.build_source_config(make_args(), {})
+
+        assert config.soundcloud_enabled is True
+        assert config.soundcloud_min_score == m.SOUNDCLOUD_MIN_SCORE
+        assert config.soundcloud_min_margin == m.SOUNDCLOUD_MIN_MARGIN
+
+    def test_soundcloud_can_be_disabled_by_flag(self):
+        config = m.build_source_config(
+            make_args(soundcloud_enabled=False),
+            {},
+        )
+
+        assert config.soundcloud_enabled is False
+
+    def test_soundcloud_can_be_disabled_in_config(self):
+        config = m.build_source_config(
+            make_args(),
+            {"soundcloud_enabled": "false"},
+        )
+
+        assert config.soundcloud_enabled is False
+
+    def test_soundcloud_can_be_disabled_with_disable_sources(self):
+        config = m.build_source_config(
+            make_args(disable_sources="soundcloud"),
+            {},
+        )
+
+        assert config.soundcloud_enabled is False
+
+    def test_soundcloud_thresholds_can_be_configured(self):
+        config = m.build_source_config(
+            make_args(
+                soundcloud_min_score=0.9,
+                soundcloud_min_margin=0.02,
+            ),
+            {},
+        )
+
+        assert config.soundcloud_min_score == 0.9
+        assert config.soundcloud_min_margin == 0.02
+
+        from_config = m.build_source_config(
+            make_args(),
+            {
+                "soundcloud_min_score": "0.8",
+                "soundcloud_min_margin": "0.15",
+            },
+        )
+
+        assert from_config.soundcloud_min_score == 0.8
+        assert from_config.soundcloud_min_margin == 0.15
+
+    def test_invalid_soundcloud_threshold_is_rejected(self):
+        with pytest.raises(ValueError):
+            m.build_source_config(
+                make_args(soundcloud_min_score=1.5),
+                {},
+            )
+
     def test_provider_options_are_applied(self):
         config = m.build_source_config(
             make_args(

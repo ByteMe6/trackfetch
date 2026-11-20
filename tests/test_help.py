@@ -236,6 +236,9 @@ class TestGroups:
             "list_sources",
             "spotify_client_id",
             "spotify_client_secret",
+            "soundcloud_enabled",
+            "soundcloud_min_score",
+            "soundcloud_min_margin",
         } == dests
 
     def test_appearance_flags_are_grouped(self, parser):

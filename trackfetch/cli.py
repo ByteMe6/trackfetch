@@ -251,6 +251,39 @@ def build_parser():
     )
 
     metadata_group.add_argument(
+        "--soundcloud",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        dest="soundcloud_enabled",
+        help=(
+            "Try SoundCloud when YouTube blocks a video with an age "
+            "restriction; never used for other errors (default: on)"
+        ),
+    )
+
+    metadata_group.add_argument(
+        "--soundcloud-min-score",
+        type=float,
+        default=None,
+        metavar="SCORE",
+        help=(
+            "Minimum SoundCloud match score before downloading without "
+            "asking, 0.0-1.0 (default: 0.75)"
+        ),
+    )
+
+    metadata_group.add_argument(
+        "--soundcloud-min-margin",
+        type=float,
+        default=None,
+        metavar="SCORE",
+        help=(
+            "Score gap required between the best two SoundCloud results "
+            "before picking one automatically, 0.0-1.0 (default: 0.08)"
+        ),
+    )
+
+    metadata_group.add_argument(
         "--list-sources",
         action="store_true",
         default=None,
@@ -728,6 +761,14 @@ def main():
         + (
             colors.success("enabled (all formats)")
             if source_config.lyrics_enabled
+            else colors.muted("disabled")
+        )
+    )
+    print(
+        f"{colors.label('SoundCloud fallback:')} "
+        + (
+            colors.success("enabled (age-restricted YouTube only)")
+            if source_config.soundcloud_enabled
             else colors.muted("disabled")
         )
     )

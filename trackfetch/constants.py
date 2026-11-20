@@ -31,7 +31,7 @@ AUDIO_FORMATS = {
     ],
 }
 
-VERSION = "2.2.11"
+VERSION = "2.3.0"
 USER_AGENT = (
     f"trackfetch/{VERSION} "
     "(https://github.com/ByteMe6/trackfetch)"
@@ -75,7 +75,31 @@ PROVIDER_DEFAULTS = {
 
 DEFAULT_MATCH_THRESHOLD = 0.6
 DEFAULT_TITLE_THRESHOLD = 0.8
+# YouTube candidates below this score are treated as "no confident match".
+YOUTUBE_MIN_SCORE = 0.55
+YOUTUBE_MUSIC_SEARCH_LIMIT = 8
+YOUTUBE_MUSIC_DETAIL_CANDIDATES = 3
+YOUTUBE_MUSIC_MAX_DURATION_DIFF = 10
 YOUTUBE_DEFAULT_ENABLED = True
+# SoundCloud fallback for YouTube videos blocked by an age restriction.
+SOUNDCLOUD_DEFAULT_ENABLED = True
+SOUNDCLOUD_SEARCH_LIMIT = 5
+# Metadata is fetched for at most this many search results before scoring.
+SOUNDCLOUD_DETAILS_LIMIT = 5
+SOUNDCLOUD_SEARCH_TIMEOUT = 60
+SOUNDCLOUD_DETAILS_TIMEOUT = 60
+# A candidate must reach this score before it is downloaded automatically.
+SOUNDCLOUD_MIN_SCORE = 0.75
+# When two plausible candidates are closer than this, the user decides.
+SOUNDCLOUD_MIN_MARGIN = 0.08
+SOUNDCLOUD_MIN_TITLE_SCORE = 0.35
+SOUNDCLOUD_TITLE_WEIGHT = 0.40
+SOUNDCLOUD_ARTIST_WEIGHT = 0.30
+SOUNDCLOUD_DURATION_WEIGHT = 0.20
+SOUNDCLOUD_EXTRA_WEIGHT = 0.10
+SOUNDCLOUD_PREVIEW_SECONDS = 45
+SOUNDCLOUD_PREVIEW_RATIO = 0.60
+SOUNDCLOUD_DURATION_TOLERANCE = 10
 LYRICS_DEFAULT_ENABLED = True
 LYRICS_LANGUAGE = "und"
 LYRICS_TIMEOUT = 15

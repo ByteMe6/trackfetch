@@ -145,6 +145,8 @@ def apply_config(args, parser, settings):
             "provider_opt",
             "match_threshold",
             "title_threshold",
+            "soundcloud_min_score",
+            "soundcloud_min_margin",
             "list_sources",
         ):
             continue

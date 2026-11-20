@@ -9,3 +9,10 @@ class ProviderError(Exception):
 class ProviderAuthError(ProviderError):
     """A provider rejected the credentials."""
 
+
+class YoutubeSearchError(Exception):
+    """yt-dlp search exited with a non-zero status."""
+
+
+class SoundcloudError(Exception):
+    """A SoundCloud search or metadata request failed."""

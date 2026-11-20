@@ -322,6 +322,57 @@ class TestProcessSong:
         pipeline["video"] = None
         assert m.process_song(None, "a", "b", tmp_path, False) == (False, "no YouTube result")
 
+    def test_no_confident_youtube_match(self, pipeline, tmp_path, monkeypatch):
+        def no_match(artist, title, duration=None):
+            m.youtube.LAST_SEARCH_HAD_CANDIDATES = True
+            return None
+
+        monkeypatch.setattr(m.pipeline, "find_youtube_video", no_match)
+
+        assert m.process_song(
+            None, "a", "b", tmp_path, False
+        ) == (False, "no confident YouTube match")
+
+    def test_ytdlp_search_failure(self, pipeline, tmp_path, monkeypatch):
+        def search_failed(artist, title, duration=None):
+            raise m.youtube.YoutubeSearchError("boom")
+
+        monkeypatch.setattr(m.pipeline, "find_youtube_video", search_failed)
+
+        assert m.process_song(
+            None, "a", "b", tmp_path, False
+        ) == (False, "yt-dlp search failed")
+
+    def test_music_fallback_with_no_match_is_not_a_result(
+        self, pipeline, tmp_path, monkeypatch
+    ):
+        monkeypatch.setattr(m.pipeline, "find_youtube_video", m.youtube.find_youtube_video)
+        monkeypatch.setattr(
+            m.youtube,
+            "youtube_search",
+            lambda query, limit: [],
+        )
+        monkeypatch.setattr(
+            m.youtube,
+            "youtube_music_search",
+            lambda query, limit=8: [
+                {"id": "W831-GLcBKc", "title": "Life"},
+            ],
+        )
+        monkeypatch.setattr(
+            m.youtube,
+            "youtube_video_details",
+            lambda video_id: {
+                "id": video_id,
+                "title": "Life",
+                "artist": "Someone Else",
+            },
+        )
+
+        assert m.process_song(
+            None, "a", "b", tmp_path, False
+        ) == (False, "no confident YouTube match")
+
     def test_invalid_youtube_result(self, pipeline, tmp_path):
         pipeline["video"] = {"title": "no id"}
         assert m.process_song(None, "a", "b", tmp_path, False) == (False, "invalid YouTube result")
@@ -336,6 +387,19 @@ class TestProcessSong:
         assert m.process_song(None, "a", "b", tmp_path, False) == (True, "downloaded")
         assert not ID3(tmp_path / "Daft Punk - One More Time.mp3").getall("APIC")
         assert "cover download failed" in capsys.readouterr().out
+
+    def test_lrc_sidecar_error_is_not_fatal(
+        self, pipeline, tmp_path, monkeypatch, capsys
+    ):
+        def boom(*args):
+            raise OSError("read-only")
+
+        monkeypatch.setattr(m.pipeline, "write_lrc_sidecar", boom)
+
+        assert m.process_song(
+            None, "a", "b", tmp_path, False
+        ) == (True, "downloaded")
+        assert "could not write LRC file" in capsys.readouterr().out
 
     def test_metadata_error(self, pipeline, tmp_path, monkeypatch):
         def boom(*args):
@@ -569,3 +633,500 @@ class TestMain:
             run_cli(monkeypatch, songs, "--format", "flac")
         assert exc.value.code == 2
         assert "invalid choice" in capsys.readouterr().err
+
+
+class TestSoundcloudFallbackIntegration:
+    """The fallback must run only for an age restriction, and only once."""
+
+    @pytest.fixture(autouse=True)
+    def offline(self, monkeypatch):
+        """Never touch live SoundCloud; individual tests override as needed."""
+        from trackfetch import soundcloud
+
+        soundcloud.reset_attempts()
+        monkeypatch.setattr(
+            soundcloud,
+            "soundcloud_track_details",
+            lambda url: {},
+        )
+
+    AGE_ERROR = (
+        "ERROR: [youtube] x: Sign in to confirm your age. "
+        "This video may be inappropriate for some users."
+    )
+
+    def prepare(self, pipeline, monkeypatch, age_restricted):
+        from trackfetch import soundcloud
+
+        soundcloud.reset_attempts()
+        state = {"downloads": 0, "urls": []}
+
+        def fake_download_audio(url, temp_dir, audio_format="mp3", audio_quality=None):
+            state["urls"].append(url)
+            state["downloads"] += 1
+
+            if state["downloads"] == 1:
+                return None
+
+            path = temp_dir / f"audio.{audio_format}"
+            path.write_bytes(b"\x00" * 64)
+            return path
+
+        monkeypatch.setattr(m.pipeline, "download_audio", fake_download_audio)
+        monkeypatch.setattr(
+            m.pipeline,
+            "probe_age_restriction",
+            lambda url, *a, **k: age_restricted,
+        )
+        return state
+
+    def candidate(self, **overrides):
+        data = {
+            "id": "850231564",
+            "title": "Daft Punk - One More Time",
+            "track": "Daft Punk - One More Time",
+            "duration": 200,
+            "uploader": "Daft Punk",
+            "webpage_url": "https://soundcloud.com/daftpunk/one-more-time",
+        }
+        data.update(overrides)
+        return data
+
+    def config(self, **kwargs):
+        return m.build_source_config(
+            argparse.Namespace(
+                metadata_sources=None,
+                disable_sources=None,
+                provider_opt=None,
+                match_threshold=None,
+                title_threshold=None,
+                **kwargs,
+            ),
+            {},
+        )
+
+    def test_age_restriction_downloads_the_soundcloud_copy(
+        self, pipeline, monkeypatch, tmp_path
+    ):
+        state = self.prepare(pipeline, monkeypatch, True)
+        monkeypatch.setattr(
+            m.pipeline.soundcloud,
+            "soundcloud_search",
+            lambda query, limit=5: [self.candidate()],
+        )
+        monkeypatch.setattr(
+            m.pipeline.soundcloud,
+            "soundcloud_track_details",
+            lambda url: {
+                "id": "850231564",
+                "title": "Daft Punk - One More Time",
+                "duration": 200,
+                "license": "all-rights-reserved",
+            },
+        )
+
+        ok, reason = m.process_song(
+            None,
+            "Daft Punk",
+            "One More Time",
+            tmp_path,
+            False,
+            source_config=self.config(),
+        )
+
+        assert (ok, reason) == (True, "downloaded")
+        assert state["urls"] == [
+            "https://www.youtube.com/watch?v=abc",
+            "https://soundcloud.com/daftpunk/one-more-time",
+        ]
+        assert (tmp_path / "Daft Punk - One More Time.mp3").exists()
+
+    def test_non_age_error_never_searches_soundcloud(
+        self, pipeline, monkeypatch, tmp_path
+    ):
+        self.prepare(pipeline, monkeypatch, False)
+
+        def boom(*args, **kwargs):
+            pytest.fail("SoundCloud must not be searched")
+
+        monkeypatch.setattr(m.pipeline.soundcloud, "soundcloud_search", boom)
+
+        assert m.process_song(
+            None,
+            "Daft Punk",
+            "One More Time",
+            tmp_path,
+            False,
+            source_config=self.config(),
+        ) == (False, "yt-dlp download failed")
+
+    def test_network_error_never_searches_soundcloud(
+        self, pipeline, monkeypatch, tmp_path
+    ):
+        self.prepare(pipeline, monkeypatch, False)
+        monkeypatch.setattr(
+            m.pipeline.soundcloud,
+            "soundcloud_search",
+            lambda *a, **k: pytest.fail("must not search"),
+        )
+
+        assert m.process_song(
+            None,
+            "Daft Punk",
+            "One More Time",
+            tmp_path,
+            False,
+            source_config=self.config(),
+        ) == (False, "yt-dlp download failed")
+
+    def test_private_video_never_searches_soundcloud(
+        self, pipeline, monkeypatch, tmp_path
+    ):
+        self.prepare(pipeline, monkeypatch, False)
+        monkeypatch.setattr(
+            m.pipeline.soundcloud,
+            "soundcloud_search",
+            lambda *a, **k: pytest.fail("must not search"),
+        )
+
+        assert m.process_song(
+            None,
+            "Daft Punk",
+            "One More Time",
+            tmp_path,
+            False,
+            source_config=self.config(),
+        )[0] is False
+
+    def test_disabled_fallback_keeps_the_original_reason(
+        self, pipeline, monkeypatch, tmp_path
+    ):
+        self.prepare(pipeline, monkeypatch, True)
+        monkeypatch.setattr(
+            m.pipeline.soundcloud,
+            "soundcloud_search",
+            lambda *a, **k: pytest.fail("must not search"),
+        )
+
+        assert m.process_song(
+            None,
+            "Daft Punk",
+            "One More Time",
+            tmp_path,
+            False,
+            source_config=self.config(soundcloud_enabled=False),
+        ) == (False, "yt-dlp download failed")
+
+    def test_preview_candidate_is_not_downloaded(
+        self, pipeline, monkeypatch, tmp_path
+    ):
+        state = self.prepare(pipeline, monkeypatch, True)
+        monkeypatch.setattr(
+            m.pipeline.soundcloud,
+            "soundcloud_search",
+            lambda query, limit=5: [self.candidate(duration=30)],
+        )
+
+        ok, reason = m.process_song(
+            None,
+            "Daft Punk",
+            "One More Time",
+            tmp_path,
+            False,
+            source_config=self.config(),
+        )
+
+        assert ok is False
+        assert "SoundCloud" in reason
+        assert len(state["urls"]) == 1
+
+    def test_no_match_does_not_download(
+        self, pipeline, monkeypatch, tmp_path
+    ):
+        state = self.prepare(pipeline, monkeypatch, True)
+        monkeypatch.setattr(
+            m.pipeline.soundcloud,
+            "soundcloud_search",
+            lambda query, limit=5: [],
+        )
+
+        ok, reason = m.process_song(
+            None,
+            "Daft Punk",
+            "One More Time",
+            tmp_path,
+            False,
+            source_config=self.config(),
+        )
+
+        assert ok is False
+        assert reason == "no SoundCloud match"
+        assert len(state["urls"]) == 1
+
+    def test_soundcloud_download_failure_is_reported(
+        self, pipeline, monkeypatch, tmp_path
+    ):
+        self.prepare(pipeline, monkeypatch, True)
+        # Both the YouTube and the SoundCloud download fail.
+        monkeypatch.setattr(
+            m.pipeline,
+            "download_audio",
+            lambda *a, **k: None,
+        )
+        monkeypatch.setattr(
+            m.pipeline.soundcloud,
+            "soundcloud_search",
+            lambda query, limit=5: [self.candidate()],
+        )
+        monkeypatch.setattr(
+            m.pipeline.soundcloud,
+            "soundcloud_track_details",
+            lambda url: {},
+        )
+
+        ok, reason = m.process_song(
+            None,
+            "Daft Punk",
+            "One More Time",
+            tmp_path,
+            False,
+            source_config=self.config(),
+        )
+
+        assert (ok, reason) == (False, "yt-dlp download failed")
+
+    def test_fallback_runs_only_once_per_song(
+        self, pipeline, monkeypatch, tmp_path
+    ):
+        m.soundcloud.reset_attempts()
+        calls = []
+
+        def failing_download(url, temp_dir, audio_format="mp3", audio_quality=None):
+            return None
+
+        monkeypatch.setattr(m.pipeline, "download_audio", failing_download)
+        monkeypatch.setattr(
+            m.pipeline,
+            "probe_age_restriction",
+            lambda url, *a, **k: True,
+        )
+        monkeypatch.setattr(
+            m.pipeline.soundcloud,
+            "soundcloud_search",
+            lambda query, limit=5: calls.append(query) or [self.candidate()],
+        )
+        monkeypatch.setattr(
+            m.pipeline.soundcloud,
+            "soundcloud_track_details",
+            lambda url: {},
+        )
+
+        config = self.config()
+        m.process_song(
+            None, "Daft Punk", "One More Time", tmp_path, False, source_config=config
+        )
+        m.process_song(
+            None, "Daft Punk", "One More Time", tmp_path, False, source_config=config
+        )
+
+        assert len(calls) == 1
+
+    def test_soundcloud_artwork_fills_missing_cover(
+        self, pipeline, monkeypatch, tmp_path
+    ):
+        from mutagen.id3 import ID3
+
+        self.prepare(pipeline, monkeypatch, True)
+
+        def no_artwork(artist, title, source_config, runtime):
+            metadata = m.fallback_metadata(artist, title)
+            metadata["duration"] = 200
+            return metadata
+
+        monkeypatch.setattr(m.pipeline, "resolve_metadata", no_artwork)
+        cover_urls = []
+
+        def fake_cover(metadata_arg, video, dest, youtube_enabled):
+            cover_urls.append(metadata_arg.get("cover_url"))
+            dest.write_bytes(b"\xff\xd8\xff\xe0jpeg")
+            return dest
+
+        monkeypatch.setattr(m.pipeline, "download_best_cover", fake_cover)
+        monkeypatch.setattr(
+            m.pipeline.soundcloud,
+            "soundcloud_search",
+            lambda query, limit=5: [
+                self.candidate(
+                    thumbnails=[
+                        {"url": "https://i1.sndcdn.com/small.jpg", "width": 100},
+                        {"url": "https://i1.sndcdn.com/large.jpg", "width": 500},
+                    ]
+                )
+            ],
+        )
+        monkeypatch.setattr(
+            m.pipeline.soundcloud,
+            "soundcloud_track_details",
+            lambda url: {},
+        )
+
+        assert m.process_song(
+            None,
+            "Daft Punk",
+            "One More Time",
+            tmp_path,
+            False,
+            source_config=self.config(),
+        ) == (True, "downloaded")
+
+        # The provider had no artwork in this pipeline fixture, so the largest
+        # SoundCloud thumbnail is used.
+        assert "https://i1.sndcdn.com/large.jpg" in cover_urls
+        assert (tmp_path / "Daft Punk - One More Time.mp3").exists()
+        assert ID3(tmp_path / "Daft Punk - One More Time.mp3").getall("APIC")
+
+    def test_candidate_blocked_after_verification_is_not_downloaded(
+        self, pipeline, monkeypatch, tmp_path
+    ):
+        state = self.prepare(pipeline, monkeypatch, True)
+        monkeypatch.setattr(
+            m.pipeline.soundcloud,
+            "soundcloud_search",
+            lambda query, limit=5: [self.candidate()],
+        )
+        monkeypatch.setattr(
+            m.pipeline.soundcloud,
+            "soundcloud_track_details",
+            lambda url: {"downloadable": False},
+        )
+
+        ok, reason = m.process_song(
+            None,
+            "Daft Punk",
+            "One More Time",
+            tmp_path,
+            False,
+            source_config=self.config(),
+        )
+
+        assert ok is False
+        assert "install" not in reason
+        assert len(state["urls"]) == 1
+
+    def test_soundcloud_thumbnail_is_used_without_a_thumbnail_list(
+        self, pipeline, monkeypatch, tmp_path
+    ):
+        from mutagen.id3 import ID3
+
+        self.prepare(pipeline, monkeypatch, True)
+
+        def no_artwork(artist, title, source_config, runtime):
+            metadata = m.fallback_metadata(artist, title)
+            metadata["duration"] = 200
+            return metadata
+
+        monkeypatch.setattr(m.pipeline, "resolve_metadata", no_artwork)
+        seen = []
+
+        def fake_cover(metadata_arg, video, dest, youtube_enabled):
+            seen.append(metadata_arg.get("cover_url"))
+            dest.write_bytes(b"\xff\xd8\xff\xe0jpeg")
+            return dest
+
+        monkeypatch.setattr(m.pipeline, "download_best_cover", fake_cover)
+        monkeypatch.setattr(
+            m.pipeline.soundcloud,
+            "soundcloud_search",
+            lambda query, limit=5: [
+                self.candidate(thumbnail="https://i1.sndcdn.com/only.jpg")
+            ],
+        )
+        monkeypatch.setattr(
+            m.pipeline.soundcloud,
+            "soundcloud_track_details",
+            lambda url: {},
+        )
+
+        assert m.process_song(
+            None,
+            "Daft Punk",
+            "One More Time",
+            tmp_path,
+            False,
+            source_config=self.config(),
+        ) == (True, "downloaded")
+        assert seen == ["https://i1.sndcdn.com/only.jpg"]
+        assert ID3(tmp_path / "Daft Punk - One More Time.mp3").getall("APIC")
+
+    def test_invalid_soundcloud_result_is_reported(
+        self, pipeline, monkeypatch, tmp_path
+    ):
+        self.prepare(pipeline, monkeypatch, True)
+
+        # The search payload has no URL; the details call cannot add one.
+        monkeypatch.setattr(
+            m.pipeline.soundcloud,
+            "soundcloud_search",
+            lambda query, limit=5: [
+                {
+                    "id": "850231564",
+                    "title": "Daft Punk - One More Time",
+                    "track": "Daft Punk - One More Time",
+                    "duration": 200,
+                    "uploader": "Daft Punk",
+                }
+            ],
+        )
+        monkeypatch.setattr(
+            m.pipeline.soundcloud,
+            "soundcloud_track_details",
+            lambda url: {},
+        )
+
+        ok, reason = m.process_song(
+            None,
+            "Daft Punk",
+            "One More Time",
+            tmp_path,
+            False,
+            source_config=self.config(),
+        )
+
+        assert ok is False
+
+    def test_preview_found_only_in_details_is_rejected(
+        self, pipeline, monkeypatch, tmp_path
+    ):
+        state = self.prepare(pipeline, monkeypatch, True)
+        monkeypatch.setattr(
+            m.pipeline.soundcloud,
+            "soundcloud_search",
+            lambda query, limit=5: [self.candidate(duration=200)],
+        )
+        # The details call reveals the 30-second preview duration.
+        monkeypatch.setattr(
+            m.pipeline.soundcloud,
+            "soundcloud_track_details",
+            lambda url: {"duration": 30},
+        )
+
+        ok, reason = m.process_song(
+            None,
+            "Daft Punk",
+            "One More Time",
+            tmp_path,
+            False,
+            source_config=self.config(),
+        )
+
+        assert ok is False
+        assert "SoundCloud" in reason
+        assert len(state["urls"]) == 1
+
+    def test_artwork_helper_handles_missing_thumbnails(self):
+        assert m.pipeline._soundcloud_artwork({}) is None
+        assert m.pipeline._soundcloud_artwork({"thumbnails": "x"}) is None
+        assert (
+            m.pipeline._soundcloud_artwork({"thumbnail": "https://t"})
+            == "https://t"
+        )
