@@ -31,6 +31,7 @@
             pillow
             requests
             spotipy
+            unidecode
             yt-dlp
           ];
 
@@ -79,6 +80,7 @@
                 pillow
                 requests
                 spotipy
+                unidecode
                 yt-dlp
                 pytest
                 pytest-cov
