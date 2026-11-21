@@ -1197,12 +1197,13 @@ def find_soundcloud_fallback(
         print(colors.muted("Several SoundCloud results are close."))
 
         if ambiguous == "best" and approved:
-            # Non-interactive mode: take the runner-up-aware top result
-            # instead of asking, because there is no terminal to ask on.
+            # soundcloud_ambiguous=best asks for the top result instead of a
+            # question, which keeps unattended runs moving. It is a setting,
+            # not a detected lack of terminal, so do not claim otherwise.
             print(
                 colors.muted(
                     "Taking the highest scoring SoundCloud result "
-                    "(non-interactive)."
+                    "(soundcloud_ambiguous=best)."
                 )
             )
             best = dict(approved[0])
