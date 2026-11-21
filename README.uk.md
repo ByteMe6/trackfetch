@@ -686,6 +686,12 @@ pytest --cov=trackfetch
 
 trackfetch призначений для особистого використання й лише для контенту, який ти маєш право завантажувати. Ти сам відповідаєш за дотримання авторського права у своїй країні та умов використання YouTube і Spotify. trackfetch не пов'язаний зі Spotify, YouTube і TuneMyMusic і не схвалений ними. Якщо маєш змогу, підтримуй артистів, яких слухаєш.
 
+## Контриб'ютори
+
+<a href="https://github.com/ByteMe6/trackfetch/graphs/contributors">
+  <img src="https://contrib.rocks/image?repo=ByteMe6/trackfetch" />
+</a>
+
 ## Ліцензія
 
 trackfetch — вільне програмне забезпечення під ліцензією [GNU General Public License v3.0 або новішої версії](LICENSE). Його можна використовувати, вивчати, змінювати й поширювати. Змінені версії під час поширення мають залишатися під тією самою ліцензією.

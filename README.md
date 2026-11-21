@@ -701,6 +701,12 @@ To release, move the changes under `[Unreleased]` in the changelog to a new `## 
 
 trackfetch is for personal use with content you have the right to download. You are responsible for following copyright law where you live and the terms of service of YouTube and Spotify. trackfetch isn't affiliated with or endorsed by Spotify, YouTube or TuneMyMusic. If you can, support the artists you listen to.
 
+## Contributors
+
+<a href="https://github.com/ByteMe6/trackfetch/graphs/contributors">
+  <img src="https://contrib.rocks/image?repo=ByteMe6/trackfetch" />
+</a>
+
 ## License
 
 trackfetch is free software, released under the [GNU General Public License v3.0 or later](https://github.com/ByteMe6/trackfetch/blob/master/LICENSE). You can use, study, change and share it. If you distribute a modified version, it must stay under the same license.
