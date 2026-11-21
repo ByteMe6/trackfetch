@@ -200,7 +200,7 @@ trackfetch [-h] [-v] [--track ARTIST - TITLE ...] [-o OUTPUT] [--config CONFIG] 
 | `-s`, `--metadata-sources` | `itunes` | Comma-separated metadata priority, for example `deezer,itunes,musicbrainz`. `none` disables metadata lookups but keeps YouTube. A CLI selection overrides configured disabling for the selected providers. |
 | `--disable-sources` | — | Comma-separated sources to disable, for example `spotify,youtube` or `soundcloud`. Takes precedence over a CLI metadata selection for the same provider. |
 | `--soundcloud`, `--no-soundcloud` | on | Search SoundCloud instead of failing, controlled by `--soundcloud-trigger`. |
-| `--soundcloud-trigger WHEN` | `age` | `age` (age-restricted videos only), `age-or-missing` (also when YouTube finds no confident match) or `any` (any failed search or download). |
+| `--soundcloud-trigger WHEN` | `age` | `age` (age-restricted videos only), `blocked` (also YouTube bot/login walls and members-only), `age-or-missing` (`blocked`, plus no confident YouTube match) or `any` (any failed search or download). |
 | `--soundcloud-ambiguous MODE` | `skip` | `skip` never downloads an ambiguous match without a terminal; `best` takes the highest scoring result, which non-interactive runs need. |
 | `--soundcloud-min-score` | `0.75` | Minimum candidate score before trackfetch downloads without asking. |
 | `--soundcloud-min-margin` | `0.08` | Score gap required between the best two SoundCloud results before picking one automatically. |

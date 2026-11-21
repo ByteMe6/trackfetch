@@ -263,12 +263,13 @@ def build_parser():
 
     metadata_group.add_argument(
         "--soundcloud-trigger",
-        choices=("age", "age-or-missing", "any"),
+        choices=("age", "blocked", "age-or-missing", "any"),
         default=None,
         metavar="WHEN",
         help=(
             "When to try SoundCloud: age (age restriction only, default), "
-            "age-or-missing (also when YouTube has no confident match) or "
+            "blocked (age restriction or a YouTube bot/login wall), "
+            "age-or-missing (blocked, plus no confident YouTube match) or "
             "any (any failed search or download)"
         ),
     )
@@ -790,7 +791,8 @@ def main():
     )
     trigger_labels = {
         "age": "age-restricted YouTube only",
-        "age-or-missing": "age restriction or no YouTube match",
+        "blocked": "age restriction or YouTube login wall",
+        "age-or-missing": "blocked, or no YouTube match",
         "any": "any failed YouTube search or download",
     }
     print(

@@ -4,6 +4,7 @@
 import json
 import re
 import subprocess
+import sys
 import unicodedata
 from pathlib import Path
 from urllib.parse import quote_plus
@@ -28,6 +29,11 @@ from .matching import MIN_ARTIST_SIMILARITY, normalize, similarity
 # apart from "results existed, but none was confident enough".
 LAST_SEARCH_HAD_CANDIDATES = False
 
+# Tail of the last real download's stderr, so the pipeline can classify the
+# failure. The metadata probe is not enough: a bot check often still lets
+# --dump-single-json through and only fails at download time.
+LAST_DOWNLOAD_ERROR = ""
+
 # yt-dlp phrases that specifically mean "age restriction". Anything else,
 # such as "Video unavailable", "Private video" or a network error, must keep
 # the existing failure handling and must not trigger a fallback.
@@ -44,6 +50,33 @@ AGE_RESTRICTION_PATTERNS = (
     "age verification required",
     "requires age verification",
 )
+
+
+# yt-dlp phrases that mean YouTube is gating the download behind a login.
+# This is not an age restriction: it is a bot/account check that can hit any
+# video. Both mean "YouTube will not give us the file without credentials",
+# which is exactly when looking for another copy is reasonable.
+BOT_CHECK_PATTERNS = (
+    "sign in to confirm you're not a bot",
+    "sign in to confirm you’re not a bot",
+    "confirm you're not a bot",
+    "confirm you’re not a bot",
+    "sign in to confirm your age",
+    "confirm your age",
+    "use --cookies-from-browser",
+    "use --cookies for the authentication",
+    "this video requires payment",
+    "members-only content",
+)
+
+
+def is_bot_check_error(text) -> bool:
+    """Whether a yt-dlp error is a login/bot wall rather than a real refusal."""
+    if not text:
+        return False
+
+    lowered = str(text).lower()
+    return any(pattern in lowered for pattern in BOT_CHECK_PATTERNS)
 
 
 def is_age_restriction_error(text) -> bool:
@@ -652,12 +685,50 @@ def probe_age_restriction(video_url, timeout=60):
     )
 
 
+def _run_streaming(command, limit=8000):
+    """Run a command, echo stderr live and keep its tail.
+
+    yt-dlp writes both the progress bar and errors to stderr. Hiding it would
+    hide progress on a long download, so each line is forwarded as it arrives
+    and only the tail is kept for error classification.
+    """
+    process = subprocess.Popen(
+        command,
+        stderr=subprocess.PIPE,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+    )
+    captured = []
+
+    try:
+        for line in process.stderr:
+            sys.stderr.write(line)
+            sys.stderr.flush()
+            captured.append(line)
+
+        returncode = process.wait()
+
+    except BaseException:
+        process.kill()
+        process.wait()
+        raise
+
+    finally:
+        process.stderr.close()
+
+    return returncode, "".join(captured)[-limit:].strip()
+
+
 def download_audio(
     video_url: str,
     temp_dir: Path,
     audio_format: str = "mp3",
     audio_quality: int = DEFAULT_AUDIO_QUALITY,
 ):
+    """Download and convert audio, recording yt-dlp's error on failure."""
+    global LAST_DOWNLOAD_ERROR
+
     template = str(temp_dir / "audio.%(ext)s")
 
     command = [
@@ -676,9 +747,18 @@ def download_audio(
         video_url,
     ]
 
-    result = subprocess.run(command)
+    LAST_DOWNLOAD_ERROR = ""
 
-    if result.returncode != 0:
+    try:
+        returncode, error_text = _run_streaming(command)
+
+    except OSError as error:
+        LAST_DOWNLOAD_ERROR = str(error)
+        return None
+
+    LAST_DOWNLOAD_ERROR = error_text
+
+    if returncode != 0:
         return None
 
     files = list(temp_dir.glob(f"audio.{audio_format}"))

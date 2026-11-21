@@ -1379,3 +1379,119 @@ class TestNonInteractiveAmbiguity:
         )
 
         assert not result.selected
+
+
+class TestOriginalNameRetry:
+    """A provider can resolve the wrong artist; the input name is a safety net."""
+
+    def test_retries_with_the_input_names_when_the_first_pass_fails(
+        self, monkeypatch
+    ):
+        queries = []
+
+        def fake_search(query, limit=5):
+            queries.append(query)
+
+            if query.startswith("MintiLove"):
+                # Only a 30-second preview exists under the wrong name.
+                return [entry("1", "Альтушка", duration=30, artist="MintiLove")]
+
+            return [
+                entry(
+                    "2",
+                    "Neverlove - Альтушка",
+                    duration=222,
+                    uploader="безымянный проект.",
+                )
+            ]
+
+        monkeypatch.setattr(soundcloud, "soundcloud_search", fake_search)
+
+        result = soundcloud.find_soundcloud_fallback(
+            "MintiLove",
+            "Альтушка",
+            None,
+            ambiguous="best",
+            fallback_names=("Neverlove", "Альтушка"),
+            attempt_key="original-name-retry",
+        )
+
+        assert result.selected
+        assert result.candidate["id"] == "2"
+        assert queries[0].startswith("MintiLove")
+        assert any(query.startswith("Neverlove") for query in queries)
+
+    def test_no_retry_when_the_first_pass_succeeds(self, monkeypatch):
+        queries = []
+
+        def fake_search(query, limit=5):
+            queries.append(query)
+            return [
+                entry("1", "Neverlove - Альтушка", duration=222, artist="Neverlove")
+            ]
+
+        monkeypatch.setattr(soundcloud, "soundcloud_search", fake_search)
+
+        result = soundcloud.find_soundcloud_fallback(
+            "Neverlove",
+            "Альтушка",
+            None,
+            ambiguous="best",
+            fallback_names=("Neverlove", "Альтушка"),
+            attempt_key="original-name-no-retry",
+        )
+
+        assert result.selected
+        assert len(queries) == 1
+
+    def test_no_retry_when_the_names_are_the_same(self, monkeypatch):
+        queries = []
+
+        def fake_search(query, limit=5):
+            queries.append(query)
+            return []
+
+        monkeypatch.setattr(soundcloud, "soundcloud_search", fake_search)
+
+        soundcloud.find_soundcloud_fallback(
+            "Neverlove",
+            "Альтушка",
+            None,
+            fallback_names=("neverlove", "АЛЬТУШКА"),
+            attempt_key="original-name-same",
+        )
+
+        assert len(queries) == 1
+
+
+class TestBotWallClassification:
+    @pytest.mark.parametrize(
+        "text",
+        [
+            "ERROR: Sign in to confirm you're not a bot.",
+            "ERROR: Sign in to confirm you’re not a bot.",
+            "Use --cookies-from-browser or --cookies for the authentication",
+            "ERROR: [youtube] x: Members-only content",
+        ],
+    )
+    def test_detects_login_walls(self, text):
+        assert m.is_bot_check_error(text) is True
+
+    @pytest.mark.parametrize(
+        "text",
+        [
+            "",
+            None,
+            "ERROR: [youtube] x: Video unavailable",
+            "ERROR: Unable to download webpage: timed out",
+            "ERROR: HTTP Error 500",
+        ],
+    )
+    def test_ignores_real_failures(self, text):
+        assert m.is_bot_check_error(text) is False
+
+    def test_bot_wall_is_not_an_age_restriction(self):
+        text = "Sign in to confirm you're not a bot."
+
+        assert m.is_bot_check_error(text) is True
+        assert m.is_age_restriction_error(text) is False

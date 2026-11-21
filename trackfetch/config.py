@@ -659,7 +659,8 @@ def format_source_list(config: SourceConfig) -> str:
     )
     trigger_labels = {
         "age": "age-restricted YouTube only",
-        "age-or-missing": "age restriction or no YouTube match",
+        "blocked": "age restriction or YouTube login wall",
+        "age-or-missing": "blocked, or no YouTube match",
         "any": "any failed YouTube search or download",
     }
     soundcloud = (

@@ -793,24 +793,61 @@ class TestYoutubeMusicFallback:
 
 
 class TestDownloadAudio:
+    """download_audio streams stderr through a small helper.
+
+    The tests replace that helper instead of subprocess, so they stay
+    independent of the console and of the real yt-dlp binary.
+    """
+
+    def install(self, monkeypatch, returncode=0, error_text=""):
+        calls = []
+
+        def fake_stream(command, limit=8000):
+            calls.append(command)
+            return returncode, error_text
+
+        monkeypatch.setattr(m.youtube, "_run_streaming", fake_stream)
+        return calls
+
     def test_success(self, monkeypatch, tmp_path):
-        def fake_run(cmd):
-            assert cmd[0] == "yt-dlp"
-            assert cmd[-1] == "https://youtu.be/x"
-            assert ["--audio-format", "mp3"] == cmd[cmd.index("--audio-format") :][:2]
-            assert "--no-playlist" in cmd
+        calls = self.install(monkeypatch)
+
+        def fake_stream(command, limit=8000):
+            calls.append(command)
             (tmp_path / "audio.mp3").write_bytes(b"mp3")
-            return completed()
+            return 0, ""
 
-        monkeypatch.setattr(subprocess, "run", fake_run)
+        monkeypatch.setattr(m.youtube, "_run_streaming", fake_stream)
+
         assert m.download_audio("https://youtu.be/x", tmp_path) == tmp_path / "audio.mp3"
+        assert calls[0][0] == "yt-dlp"
+        assert calls[0][-1] == "https://youtu.be/x"
+        assert calls[0][calls[0].index("--audio-format") + 1] == "mp3"
+        assert "--no-playlist" in calls[0]
 
-    def test_nonzero_exit(self, monkeypatch, tmp_path):
-        monkeypatch.setattr(subprocess, "run", lambda cmd: completed(returncode=1))
+    def test_nonzero_exit_records_stderr(self, monkeypatch, tmp_path):
+        self.install(
+            monkeypatch,
+            returncode=1,
+            error_text="Sign in to confirm you're not a bot",
+        )
+
         assert m.download_audio("u", tmp_path) is None
+        assert "not a bot" in m.youtube.LAST_DOWNLOAD_ERROR
+
+    def test_success_resets_the_error(self, monkeypatch, tmp_path):
+        def fake_stream(command, limit=8000):
+            (tmp_path / "audio.mp3").write_bytes(b"x")
+            return 0, ""
+
+        monkeypatch.setattr(m.youtube, "_run_streaming", fake_stream)
+        m.youtube.LAST_DOWNLOAD_ERROR = "old error"
+
+        assert m.download_audio("u", tmp_path) == tmp_path / "audio.mp3"
+        assert m.youtube.LAST_DOWNLOAD_ERROR == ""
 
     def test_no_output_file(self, monkeypatch, tmp_path):
-        monkeypatch.setattr(subprocess, "run", lambda cmd: completed())
+        self.install(monkeypatch)
         assert m.download_audio("u", tmp_path) is None
 
     @pytest.mark.parametrize(
@@ -822,33 +859,50 @@ class TestDownloadAudio:
         ],
     )
     def test_format_arguments(self, monkeypatch, tmp_path, audio_format, selector):
-        def fake_run(cmd):
-            assert cmd[cmd.index("--audio-format") + 1] == audio_format
-            if selector:
-                assert cmd[cmd.index("-f") + 1] == selector
-            else:
-                assert "-f" not in cmd
-            (tmp_path / f"audio.{audio_format}").write_bytes(b"x")
-            return completed()
+        calls = []
 
-        monkeypatch.setattr(subprocess, "run", fake_run)
+        def fake_stream(command, limit=8000):
+            calls.append(command)
+            (tmp_path / f"audio.{audio_format}").write_bytes(b"x")
+            return 0, ""
+
+        monkeypatch.setattr(m.youtube, "_run_streaming", fake_stream)
         expected = tmp_path / f"audio.{audio_format}"
+
         assert m.download_audio("u", tmp_path, audio_format) == expected
+        assert calls[0][calls[0].index("--audio-format") + 1] == audio_format
+
+        if selector:
+            assert calls[0][calls[0].index("-f") + 1] == selector
+        else:
+            assert "-f" not in calls[0]
 
     def test_audio_quality_is_passed_to_ytdlp(self, monkeypatch, tmp_path):
-        def fake_run(cmd):
-            assert cmd[cmd.index("--audio-quality") + 1] == "7"
-            (tmp_path / "audio.mp3").write_bytes(b"x")
-            return completed()
+        calls = []
 
-        monkeypatch.setattr(subprocess, "run", fake_run)
+        def fake_stream(command, limit=8000):
+            calls.append(command)
+            (tmp_path / "audio.mp3").write_bytes(b"x")
+            return 0, ""
+
+        monkeypatch.setattr(m.youtube, "_run_streaming", fake_stream)
 
         assert m.download_audio("u", tmp_path, "mp3", 7) == tmp_path / "audio.mp3"
+        assert calls[0][calls[0].index("--audio-quality") + 1] == "7"
 
     def test_ignores_files_in_other_formats(self, monkeypatch, tmp_path):
-        def fake_run(cmd):
+        def fake_stream(command, limit=8000):
             (tmp_path / "audio.webm").write_bytes(b"x")
-            return completed()
+            return 0, ""
 
-        monkeypatch.setattr(subprocess, "run", fake_run)
+        monkeypatch.setattr(m.youtube, "_run_streaming", fake_stream)
         assert m.download_audio("u", tmp_path, "opus") is None
+
+    def test_missing_ytdlp_is_reported_without_raising(self, monkeypatch, tmp_path):
+        def fake_stream(command, limit=8000):
+            raise FileNotFoundError("yt-dlp")
+
+        monkeypatch.setattr(m.youtube, "_run_streaming", fake_stream)
+
+        assert m.download_audio("u", tmp_path) is None
+        assert "yt-dlp" in m.youtube.LAST_DOWNLOAD_ERROR

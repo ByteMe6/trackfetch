@@ -31,7 +31,7 @@ AUDIO_FORMATS = {
     ],
 }
 
-VERSION = "2.3.1"
+VERSION = "2.3.2"
 USER_AGENT = (
     f"trackfetch/{VERSION} "
     "(https://github.com/ByteMe6/trackfetch)"
@@ -109,9 +109,10 @@ SOUNDCLOUD_DEFAULT_AMBIGUOUS = "skip"
 
 # What kind of YouTube failure may open the SoundCloud fallback:
 #   "age"             - only an age restriction (default)
-#   "age-or-missing"  - also when YouTube had no confident match at all
+#   "blocked"         - an age restriction or a YouTube login/bot wall
+#   "age-or-missing"  - "blocked" plus a YouTube search with no match
 #   "any"             - any failed search or download
-SOUNDCLOUD_TRIGGERS = ("age", "age-or-missing", "any")
+SOUNDCLOUD_TRIGGERS = ("age", "blocked", "age-or-missing", "any")
 SOUNDCLOUD_DEFAULT_TRIGGER = "age"
 LYRICS_DEFAULT_ENABLED = True
 LYRICS_LANGUAGE = "und"

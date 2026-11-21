@@ -4,6 +4,28 @@ All notable changes to this project are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [2.3.2] - 2026-11-21
+
+### Added
+- `--soundcloud-trigger blocked` and `soundcloud_trigger = blocked`: also
+  treat YouTube's login walls as a reason to look for another copy. This
+  covers `Sign in to confirm you're not a bot`, which is common and is not
+  an age restriction, plus members-only and payment-gated videos.
+  `age-or-missing` now includes these walls as well; `age` stays strict.
+- The fallback retries SoundCloud with the artist and title exactly as they
+  appear in the input file when the first search finds nothing usable. A
+  metadata provider can resolve a different act (for example "MintiLove"
+  instead of "Neverlove"), and searching the wrong name only returns
+  previews and unrelated uploads.
+
+### Fixed
+- The download's own stderr is now used to classify the failure. A YouTube
+  bot check often lets `--dump-single-json` through and only fails at the
+  download step, so the metadata-only probe alone missed it. Progress output
+  is still streamed, not buffered.
+- Real download failures no longer get mislabelled as age restrictions from
+  a stale probe result.
+
 ## [2.3.1] - 2026-11-21
 
 ### Added

@@ -995,6 +995,26 @@ class FallbackResult:
         )
 
 
+def _rank_with_details(
+    candidates,
+    artist,
+    title,
+    duration,
+    details_limit,
+    details_func,
+):
+    """Enrich candidates with metadata and rank them, or return []."""
+    if not candidates:
+        return []
+
+    enriched = fetch_candidate_details(
+        candidates,
+        limit=details_limit,
+        details_func=details_func,
+    )
+    return rank_candidates(enriched, artist, title, duration)
+
+
 def find_soundcloud_fallback(
     artist,
     title,
@@ -1009,6 +1029,7 @@ def find_soundcloud_fallback(
     attempt_key=None,
     details_limit=SOUNDCLOUD_DETAILS_LIMIT,
     details_func=None,
+    fallback_names=None,
 ):
     """Search SoundCloud and return the best candidate or user options.
 
@@ -1016,6 +1037,12 @@ def find_soundcloud_fallback(
     (up to ``details_limit`` tracks) before scoring. The function never
     downloads audio: the caller downloads only the candidate returned as
     selected.
+
+    ``fallback_names`` carries the artist and title as the user wrote them in
+    the input file. A metadata provider can resolve a different artist (for
+    example "MintiLove" instead of "Neverlove"), and searching SoundCloud
+    with that wrong name finds only unrelated uploads. When the first search
+    finds no confident match, the original names are tried before giving up.
     """
     if not enabled:
         return FallbackResult(STATUS_DISABLED)
@@ -1048,15 +1075,67 @@ def find_soundcloud_fallback(
 
     if not candidates:
         print(colors.muted("No SoundCloud results."))
-        return FallbackResult(STATUS_NO_MATCH)
 
-    candidates = fetch_candidate_details(
+    ranked = _rank_with_details(
         candidates,
-        limit=details_limit,
-        details_func=details_func,
+        artist,
+        title,
+        duration,
+        details_limit,
+        details_func,
     )
+    # The metadata artist can be a different act. Only when the first pass
+    # has no usable result, try the names from the input file as well.
+    if fallback_names and not any(
+        not item.get("reject_reason") for item in ranked
+    ):
+        other_artist, other_title = fallback_names
 
-    ranked = rank_candidates(candidates, artist, title, duration)
+        if (
+            normalize(other_artist) != normalize(artist)
+            or normalize(other_title) != normalize(title)
+        ):
+            print(
+                colors.muted(
+                    "Retrying SoundCloud with the original input names: "
+                    f"{' '.join(f'{other_artist} {other_title}'.split())}"
+                )
+            )
+
+            try:
+                other_entries = soundcloud_search(
+                    " ".join(f"{other_artist} {other_title}".split()),
+                    limit=limit,
+                )
+
+            except SoundcloudError as error:
+                other_entries = []
+                print(
+                    colors.warning(
+                        f"WARNING: SoundCloud search failed: {error}"
+                    )
+                )
+
+            other_candidates = [
+                parsed
+                for parsed in (
+                    parse_search_result(entry) for entry in other_entries
+                )
+                if parsed is not None
+            ]
+
+            other_ranked = _rank_with_details(
+                other_candidates,
+                other_artist,
+                other_title,
+                duration,
+                details_limit,
+                details_func,
+            )
+
+            if other_ranked:
+                ranked = other_ranked
+
     approved = [item for item in ranked if not item.get("reject_reason")]
     candidate, status = select_candidate(
         ranked,

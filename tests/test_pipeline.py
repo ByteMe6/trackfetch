@@ -1170,7 +1170,7 @@ class TestSoundcloudTrigger:
             lambda url: {},
         )
 
-    def default_trigger_does_not_run_on_missing_match(
+    def test_default_trigger_does_not_run_on_missing_match(
         self, pipeline, monkeypatch, tmp_path
     ):
         self.setup_soundcloud(monkeypatch)
@@ -1337,3 +1337,105 @@ class TestSoundcloudTrigger:
                 soundcloud_trigger="any",
             ),
         ) == (False, "no YouTube result")
+
+    def test_blocked_trigger_runs_on_a_bot_wall(
+        self, pipeline, monkeypatch, tmp_path
+    ):
+        """A login/bot wall is not an age restriction, but it is a block."""
+        self.setup_soundcloud(monkeypatch)
+        calls = {"n": 0}
+
+        def fake_download(url, temp_dir, audio_format="mp3", audio_quality=None):
+            calls["n"] += 1
+
+            if calls["n"] == 1:
+                m.youtube.LAST_DOWNLOAD_ERROR = (
+                    "ERROR: [youtube] x: Sign in to confirm you're not a bot."
+                )
+                return None
+
+            path = temp_dir / f"audio.{audio_format}"
+            path.write_bytes(b"\x00" * 64)
+            return path
+
+        monkeypatch.setattr(m.pipeline, "download_audio", fake_download)
+        monkeypatch.setattr(
+            m.pipeline,
+            "probe_age_restriction",
+            lambda *a, **k: False,
+        )
+
+        ok, _reason = m.process_song(
+            None,
+            "Daft Punk",
+            "One More Time",
+            tmp_path,
+            False,
+            source_config=self.config(soundcloud_trigger="blocked"),
+        )
+
+        assert ok is True
+        assert calls["n"] == 2
+
+    def test_blocked_trigger_still_ignores_plain_download_errors(
+        self, pipeline, monkeypatch, tmp_path
+    ):
+        self.setup_soundcloud(monkeypatch)
+        monkeypatch.setattr(
+            m.pipeline.soundcloud,
+            "soundcloud_search",
+            lambda *a, **k: pytest.fail("must not search"),
+        )
+
+        def fake_download(url, temp_dir, audio_format="mp3", audio_quality=None):
+            m.youtube.LAST_DOWNLOAD_ERROR = "ERROR: HTTP Error 500"
+            return None
+
+        monkeypatch.setattr(m.pipeline, "download_audio", fake_download)
+        monkeypatch.setattr(
+            m.pipeline,
+            "probe_age_restriction",
+            lambda *a, **k: False,
+        )
+
+        assert m.process_song(
+            None,
+            "Daft Punk",
+            "One More Time",
+            tmp_path,
+            False,
+            source_config=self.config(soundcloud_trigger="blocked"),
+        ) == (False, "yt-dlp download failed")
+
+    def test_age_trigger_ignores_a_bot_wall(
+        self, pipeline, monkeypatch, tmp_path
+    ):
+        """The default stays strict: only age restrictions count."""
+        self.setup_soundcloud(monkeypatch)
+        monkeypatch.setattr(
+            m.pipeline.soundcloud,
+            "soundcloud_search",
+            lambda *a, **k: pytest.fail("must not search"),
+        )
+
+        def fake_download(url, temp_dir, audio_format="mp3", audio_quality=None):
+            m.youtube.LAST_DOWNLOAD_ERROR = (
+                "ERROR: Sign in to confirm you're not a bot."
+            )
+            return None
+
+        monkeypatch.setattr(m.pipeline, "download_audio", fake_download)
+        monkeypatch.setattr(
+            m.pipeline,
+            "probe_age_restriction",
+            lambda *a, **k: False,
+        )
+
+        assert m.process_song(
+            None,
+            "Daft Punk",
+            "One More Time",
+            tmp_path,
+            False,
+            source_config=self.config(),
+        ) == (False, "yt-dlp download failed")

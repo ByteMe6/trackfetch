@@ -145,6 +145,7 @@ _LAZY_NAMES = {
     "download_audio": ".youtube",
     "find_youtube_video": ".youtube",
     "is_age_restriction_error": ".youtube",
+    "is_bot_check_error": ".youtube",
     "probe_age_restriction": ".youtube",
     "score_youtube_result": ".youtube",
     "youtube_music_search": ".youtube",
