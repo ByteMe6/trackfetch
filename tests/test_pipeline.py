@@ -1130,3 +1130,210 @@ class TestSoundcloudFallbackIntegration:
             m.pipeline._soundcloud_artwork({"thumbnail": "https://t"})
             == "https://t"
         )
+
+
+class TestSoundcloudTrigger:
+    """Which YouTube failures may open the SoundCloud fallback."""
+
+    def config(self, **overrides):
+        values = {
+            "metadata_sources": None,
+            "disable_sources": None,
+            "provider_opt": None,
+            "match_threshold": None,
+            "title_threshold": None,
+        }
+        values.update(overrides)
+        return m.build_source_config(argparse.Namespace(**values), {})
+
+    def setup_soundcloud(self, monkeypatch, approved=True):
+        from trackfetch import soundcloud
+
+        soundcloud.reset_attempts()
+        monkeypatch.setattr(
+            m.pipeline.soundcloud,
+            "soundcloud_search",
+            lambda query, limit=5: [
+                {
+                    "id": "sc1",
+                    "title": "Daft Punk - One More Time",
+                    "track": "Daft Punk - One More Time",
+                    "duration": 320,
+                    "uploader": "Daft Punk",
+                    "webpage_url": "https://soundcloud.com/daftpunk/one",
+                }
+            ] if approved else [],
+        )
+        monkeypatch.setattr(
+            m.pipeline.soundcloud,
+            "soundcloud_track_details",
+            lambda url: {},
+        )
+
+    def default_trigger_does_not_run_on_missing_match(
+        self, pipeline, monkeypatch, tmp_path
+    ):
+        self.setup_soundcloud(monkeypatch)
+        monkeypatch.setattr(
+            m.pipeline,
+            "find_youtube_video",
+            lambda artist, title, duration=None: None,
+        )
+
+        assert m.process_song(
+            None,
+            "Daft Punk",
+            "One More Time",
+            tmp_path,
+            False,
+            source_config=self.config(),
+        ) == (False, "no YouTube result")
+
+    def test_age_or_missing_runs_on_no_youtube_result(
+        self, pipeline, monkeypatch, tmp_path
+    ):
+        self.setup_soundcloud(monkeypatch)
+        monkeypatch.setattr(
+            m.pipeline,
+            "find_youtube_video",
+            lambda artist, title, duration=None: None,
+        )
+        m.youtube.LAST_SEARCH_HAD_CANDIDATES = False
+        def fake_download(url, temp_dir, fmt="mp3", quality=None):
+            path = temp_dir / f"audio.{fmt}"
+            path.write_bytes(b"\x00" * 64)
+            return path
+
+        monkeypatch.setattr(m.pipeline, "download_audio", fake_download)
+        monkeypatch.setattr(
+            m.pipeline,
+            "probe_age_restriction",
+            lambda *a, **k: False,
+        )
+
+        ok, reason = m.process_song(
+            None,
+            "Daft Punk",
+            "One More Time",
+            tmp_path,
+            False,
+            source_config=self.config(soundcloud_trigger="age-or-missing"),
+        )
+
+        assert (ok, reason) == (True, "downloaded")
+        assert (tmp_path / "Daft Punk - One More Time.mp3").exists()
+
+    def test_age_or_missing_does_not_run_on_network_error(
+        self, pipeline, monkeypatch, tmp_path
+    ):
+        self.setup_soundcloud(monkeypatch)
+        monkeypatch.setattr(
+            m.pipeline.soundcloud,
+            "soundcloud_search",
+            lambda *a, **k: pytest.fail("must not search"),
+        )
+
+        def failing_search(artist, title, duration=None):
+            raise m.youtube.YoutubeSearchError("timed out")
+
+        monkeypatch.setattr(m.pipeline, "find_youtube_video", failing_search)
+
+        assert m.process_song(
+            None,
+            "Daft Punk",
+            "One More Time",
+            tmp_path,
+            False,
+            source_config=self.config(soundcloud_trigger="age-or-missing"),
+        ) == (False, "yt-dlp search failed")
+
+    def test_any_trigger_runs_on_download_failure(
+        self, pipeline, monkeypatch, tmp_path
+    ):
+        self.setup_soundcloud(monkeypatch)
+        calls = {"n": 0}
+
+        def fake_download(url, temp_dir, audio_format="mp3", audio_quality=None):
+            calls["n"] += 1
+
+            if calls["n"] == 1:
+                return None
+
+            path = temp_dir / f"audio.{audio_format}"
+            path.write_bytes(b"\x00" * 64)
+            return path
+
+        monkeypatch.setattr(m.pipeline, "download_audio", fake_download)
+        monkeypatch.setattr(
+            m.pipeline,
+            "probe_age_restriction",
+            lambda *a, **k: False,
+        )
+
+        ok, _reason = m.process_song(
+            None,
+            "Daft Punk",
+            "One More Time",
+            tmp_path,
+            False,
+            source_config=self.config(soundcloud_trigger="any"),
+        )
+
+        assert ok is True
+        assert calls["n"] == 2
+
+    def test_alone_any_trigger_keeps_the_default_off(
+        self, pipeline, monkeypatch, tmp_path
+    ):
+        self.setup_soundcloud(monkeypatch)
+        monkeypatch.setattr(
+            m.pipeline.soundcloud,
+            "soundcloud_search",
+            lambda *a, **k: pytest.fail("must not search"),
+        )
+        monkeypatch.setattr(
+            m.pipeline,
+            "download_audio",
+            lambda *a, **k: None,
+        )
+        monkeypatch.setattr(
+            m.pipeline,
+            "probe_age_restriction",
+            lambda *a, **k: False,
+        )
+
+        assert m.process_song(
+            None,
+            "Daft Punk",
+            "One More Time",
+            tmp_path,
+            False,
+            source_config=self.config(),
+        ) == (False, "yt-dlp download failed")
+
+    def test_soundcloud_disabled_overrides_any_trigger(
+        self, pipeline, monkeypatch, tmp_path
+    ):
+        self.setup_soundcloud(monkeypatch)
+        monkeypatch.setattr(
+            m.pipeline.soundcloud,
+            "soundcloud_search",
+            lambda *a, **k: pytest.fail("must not search"),
+        )
+        monkeypatch.setattr(
+            m.pipeline,
+            "find_youtube_video",
+            lambda artist, title, duration=None: None,
+        )
+
+        assert m.process_song(
+            None,
+            "Daft Punk",
+            "One More Time",
+            tmp_path,
+            False,
+            source_config=self.config(
+                soundcloud_enabled=False,
+                soundcloud_trigger="any",
+            ),
+        ) == (False, "no YouTube result")

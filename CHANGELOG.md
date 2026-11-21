@@ -4,6 +4,23 @@ All notable changes to this project are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [2.3.1] - 2026-11-21
+
+### Added
+- `--soundcloud-trigger WHEN` and `soundcloud_trigger`: `age` keeps the safe
+  default of trying SoundCloud only for an age restriction,
+  `age-or-missing` also covers a YouTube search that found nothing usable,
+  and `any` covers every failed search or download.
+- `--soundcloud-ambiguous MODE` and `soundcloud_ambiguous`: `skip` keeps the
+  old behaviour of never downloading an ambiguous match without a terminal,
+  while `best` takes the highest scoring result. Non-interactive runs such as
+  `nohup trackfetch retry.txt` need `best` to make progress on their own.
+
+### Changed
+- The `--list-sources` summary and the run header now report the SoundCloud
+  trigger and the ambiguity mode instead of always claiming
+  "age-restricted YouTube only".
+
 ## [2.3.0] - 2026-11-21
 
 ### Added

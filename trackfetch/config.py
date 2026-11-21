@@ -21,9 +21,13 @@ from .constants import (
     METADATA_PROVIDERS,
     PROVIDER_DEFAULTS,
     PROVIDER_OPTIONS,
+    SOUNDCLOUD_AMBIGUOUS_MODES,
+    SOUNDCLOUD_DEFAULT_AMBIGUOUS,
     SOUNDCLOUD_DEFAULT_ENABLED,
+    SOUNDCLOUD_DEFAULT_TRIGGER,
     SOUNDCLOUD_MIN_MARGIN,
     SOUNDCLOUD_MIN_SCORE,
+    SOUNDCLOUD_TRIGGERS,
     VOCALOID_HINTS,
     YOUTUBE_DEFAULT_ENABLED,
 )
@@ -46,6 +50,8 @@ class SourceConfig:
         soundcloud_enabled=SOUNDCLOUD_DEFAULT_ENABLED,
         soundcloud_min_score=SOUNDCLOUD_MIN_SCORE,
         soundcloud_min_margin=SOUNDCLOUD_MIN_MARGIN,
+        soundcloud_trigger=SOUNDCLOUD_DEFAULT_TRIGGER,
+        soundcloud_ambiguous=SOUNDCLOUD_DEFAULT_AMBIGUOUS,
     ):
         self.metadata_sources = list(metadata_sources)
         self.youtube_enabled = bool(youtube_enabled)
@@ -59,6 +65,8 @@ class SourceConfig:
         self.soundcloud_enabled = bool(soundcloud_enabled)
         self.soundcloud_min_score = soundcloud_min_score
         self.soundcloud_min_margin = soundcloud_min_margin
+        self.soundcloud_trigger = soundcloud_trigger
+        self.soundcloud_ambiguous = soundcloud_ambiguous
 
     def interval(self, name: str) -> float:
         return self.providers[name]["min_interval"]
@@ -494,6 +502,57 @@ def build_source_config(args, settings):
         "soundcloud_min_margin",
     )
 
+    soundcloud_trigger = SOUNDCLOUD_DEFAULT_TRIGGER
+    config_trigger = config_str_value(settings, "soundcloud_trigger")
+
+    if config_trigger is not None:
+        config_trigger = config_trigger.strip().lower()
+
+        if config_trigger not in SOUNDCLOUD_TRIGGERS:
+            raise ValueError(
+                f"Unknown value for 'soundcloud_trigger': {config_trigger!r} "
+                f"(choose from {', '.join(SOUNDCLOUD_TRIGGERS)})"
+            )
+
+        soundcloud_trigger = config_trigger
+
+    cli_trigger = getattr(args, "soundcloud_trigger", None)
+
+    if cli_trigger is not None:
+        if cli_trigger not in SOUNDCLOUD_TRIGGERS:
+            raise ValueError(
+                f"Unknown value for 'soundcloud_trigger': {cli_trigger!r} "
+                f"(choose from {', '.join(SOUNDCLOUD_TRIGGERS)})"
+            )
+
+        soundcloud_trigger = cli_trigger
+
+    soundcloud_ambiguous = SOUNDCLOUD_DEFAULT_AMBIGUOUS
+    config_ambiguous = config_str_value(settings, "soundcloud_ambiguous")
+
+    if config_ambiguous is not None:
+        config_ambiguous = config_ambiguous.strip().lower()
+
+        if config_ambiguous not in SOUNDCLOUD_AMBIGUOUS_MODES:
+            raise ValueError(
+                f"Unknown value for 'soundcloud_ambiguous': "
+                f"{config_ambiguous!r} "
+                f"(choose from {', '.join(SOUNDCLOUD_AMBIGUOUS_MODES)})"
+            )
+
+        soundcloud_ambiguous = config_ambiguous
+
+    cli_ambiguous = getattr(args, "soundcloud_ambiguous", None)
+
+    if cli_ambiguous is not None:
+        if cli_ambiguous not in SOUNDCLOUD_AMBIGUOUS_MODES:
+            raise ValueError(
+                f"Unknown value for 'soundcloud_ambiguous': {cli_ambiguous!r} "
+                f"(choose from {', '.join(SOUNDCLOUD_AMBIGUOUS_MODES)})"
+            )
+
+        soundcloud_ambiguous = cli_ambiguous
+
     return SourceConfig(
         sources,
         youtube_enabled,
@@ -507,6 +566,8 @@ def build_source_config(args, settings):
         soundcloud_enabled,
         soundcloud_min_score,
         soundcloud_min_margin,
+        soundcloud_trigger,
+        soundcloud_ambiguous,
     )
 
 
@@ -596,10 +657,27 @@ def format_source_list(config: SourceConfig) -> str:
         if config.cache_enabled
         else colors.muted("disabled")
     )
+    trigger_labels = {
+        "age": "age-restricted YouTube only",
+        "age-or-missing": "age restriction or no YouTube match",
+        "any": "any failed YouTube search or download",
+    }
     soundcloud = (
-        colors.success("enabled (age-restricted YouTube only)")
+        colors.success(
+            "enabled ("
+            + trigger_labels.get(
+                config.soundcloud_trigger,
+                config.soundcloud_trigger,
+            )
+            + ")"
+        )
         if config.soundcloud_enabled
         else colors.muted("disabled")
+    )
+    ambiguous = (
+        colors.success("take the best result")
+        if getattr(config, "soundcloud_ambiguous", "skip") == "best"
+        else colors.muted("ask on a terminal, otherwise skip")
     )
     lines.extend(
         [
@@ -611,6 +689,7 @@ def format_source_list(config: SourceConfig) -> str:
             f"{colors.label('Lyrics embedding:')} {lyrics}",
             f"{colors.label('Metadata cache:')} {cache}",
             f"{colors.label('SoundCloud fallback:')} {soundcloud}",
+            f"{colors.label('SoundCloud ambiguity:')} {ambiguous}",
         ]
     )
 

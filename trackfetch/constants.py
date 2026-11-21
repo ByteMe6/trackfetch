@@ -31,7 +31,7 @@ AUDIO_FORMATS = {
     ],
 }
 
-VERSION = "2.3.0"
+VERSION = "2.3.1"
 USER_AGENT = (
     f"trackfetch/{VERSION} "
     "(https://github.com/ByteMe6/trackfetch)"
@@ -100,6 +100,19 @@ SOUNDCLOUD_EXTRA_WEIGHT = 0.10
 SOUNDCLOUD_PREVIEW_SECONDS = 45
 SOUNDCLOUD_PREVIEW_RATIO = 0.60
 SOUNDCLOUD_DURATION_TOLERANCE = 10
+
+# When several SoundCloud results are equally plausible:
+#   "skip" - never download blindly (default, needs a terminal)
+#   "best" - take the highest scoring approved result without asking
+SOUNDCLOUD_AMBIGUOUS_MODES = ("skip", "best")
+SOUNDCLOUD_DEFAULT_AMBIGUOUS = "skip"
+
+# What kind of YouTube failure may open the SoundCloud fallback:
+#   "age"             - only an age restriction (default)
+#   "age-or-missing"  - also when YouTube had no confident match at all
+#   "any"             - any failed search or download
+SOUNDCLOUD_TRIGGERS = ("age", "age-or-missing", "any")
+SOUNDCLOUD_DEFAULT_TRIGGER = "age"
 LYRICS_DEFAULT_ENABLED = True
 LYRICS_LANGUAGE = "und"
 LYRICS_TIMEOUT = 15

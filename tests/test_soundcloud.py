@@ -1288,3 +1288,94 @@ class TestFormatsPreviewMerge:
         )
 
         assert not merged.get("is_preview")
+
+
+class TestNonInteractiveAmbiguity:
+    """A nohup/cron run must be able to finish without a terminal."""
+
+    def ambiguous_search(self, monkeypatch):
+        soundcloud.reset_attempts()
+        monkeypatch.setattr(
+            soundcloud,
+            "soundcloud_search",
+            lambda query, limit=5: [
+                entry("1", "Artist - Song", duration=200, uploader="Artist"),
+                entry("2", "Artist - Song", duration=200, uploader="Artist"),
+            ],
+        )
+
+    def test_skip_mode_does_not_download(self, monkeypatch):
+        self.ambiguous_search(monkeypatch)
+
+        # No chooser: this is what a nohup/cron run looks like. Under a
+        # pipe sys.stdin.isatty() is False, so nothing is downloaded.
+        result = soundcloud.find_soundcloud_fallback(
+            "Artist",
+            "Song",
+            200,
+            ambiguous="skip",
+            attempt_key="skip-mode",
+        )
+
+        assert result.status == soundcloud.STATUS_AMBIGUOUS
+        assert not result.selected
+
+    def test_best_mode_takes_the_top_result(self, monkeypatch):
+        self.ambiguous_search(monkeypatch)
+
+        result = soundcloud.find_soundcloud_fallback(
+            "Artist",
+            "Song",
+            200,
+            ambiguous="best",
+            chooser=lambda items: pytest.fail("must not ask"),
+            attempt_key="best-mode",
+        )
+
+        assert result.selected
+        assert result.candidate["id"] in {"1", "2"}
+
+    def test_best_mode_never_picks_a_rejected_result(self, monkeypatch):
+        soundcloud.reset_attempts()
+        monkeypatch.setattr(
+            soundcloud,
+            "soundcloud_search",
+            lambda query, limit=5: [
+                entry("1", "Artist - Song (Cover)", duration=200),
+                entry("2", "Artist - Song (Live)", duration=200),
+            ],
+        )
+
+        result = soundcloud.find_soundcloud_fallback(
+            "Artist",
+            "Song",
+            200,
+            ambiguous="best",
+            chooser=lambda items: pytest.fail("must not ask"),
+            attempt_key="best-mode-rejected",
+        )
+
+        assert not result.selected
+        assert result.status == soundcloud.STATUS_NO_MATCH
+
+    def test_best_mode_keeps_the_confidence_floor(self, monkeypatch):
+        soundcloud.reset_attempts()
+        monkeypatch.setattr(
+            soundcloud,
+            "soundcloud_search",
+            lambda query, limit=5: [
+                entry("1", "Artist - Somewhat Different", duration=200),
+            ],
+        )
+
+        result = soundcloud.find_soundcloud_fallback(
+            "Artist",
+            "Song",
+            200,
+            ambiguous="best",
+            min_score=0.95,
+            chooser=lambda items: pytest.fail("must not ask"),
+            attempt_key="best-mode-floor",
+        )
+
+        assert not result.selected

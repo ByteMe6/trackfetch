@@ -2620,3 +2620,49 @@ class TestConfigPathErrors:
     def test_config_path_that_is_a_directory_raises(self, tmp_path):
         with pytest.raises(FileNotFoundError, match="not a file"):
             m.load_config(tmp_path)
+
+
+class TestSoundcloudModes:
+    def test_defaults(self):
+        config = m.build_source_config(make_args(), {})
+
+        assert config.soundcloud_trigger == "age"
+        assert config.soundcloud_ambiguous == "skip"
+
+    def test_trigger_and_ambiguity_from_cli(self):
+        config = m.build_source_config(
+            make_args(
+                soundcloud_trigger="any",
+                soundcloud_ambiguous="best",
+            ),
+            {},
+        )
+
+        assert config.soundcloud_trigger == "any"
+        assert config.soundcloud_ambiguous == "best"
+
+    def test_trigger_and_ambiguity_from_config(self):
+        config = m.build_source_config(
+            make_args(),
+            {
+                "soundcloud_trigger": "age-or-missing",
+                "soundcloud_ambiguous": "best",
+            },
+        )
+
+        assert config.soundcloud_trigger == "age-or-missing"
+        assert config.soundcloud_ambiguous == "best"
+
+    def test_invalid_trigger_is_rejected(self):
+        with pytest.raises(ValueError):
+            m.build_source_config(
+                make_args(),
+                {"soundcloud_trigger": "always"},
+            )
+
+    def test_invalid_ambiguity_is_rejected(self):
+        with pytest.raises(ValueError):
+            m.build_source_config(
+                make_args(),
+                {"soundcloud_ambiguous": "random"},
+            )

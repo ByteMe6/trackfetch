@@ -262,6 +262,30 @@ def build_parser():
     )
 
     metadata_group.add_argument(
+        "--soundcloud-trigger",
+        choices=("age", "age-or-missing", "any"),
+        default=None,
+        metavar="WHEN",
+        help=(
+            "When to try SoundCloud: age (age restriction only, default), "
+            "age-or-missing (also when YouTube has no confident match) or "
+            "any (any failed search or download)"
+        ),
+    )
+
+    metadata_group.add_argument(
+        "--soundcloud-ambiguous",
+        choices=("skip", "best"),
+        default=None,
+        metavar="MODE",
+        help=(
+            "Several equally good SoundCloud results: skip them (default) "
+            "or take the highest scoring one without asking, which is what "
+            "non-interactive runs need"
+        ),
+    )
+
+    metadata_group.add_argument(
         "--soundcloud-min-score",
         type=float,
         default=None,
@@ -764,12 +788,32 @@ def main():
             else colors.muted("disabled")
         )
     )
+    trigger_labels = {
+        "age": "age-restricted YouTube only",
+        "age-or-missing": "age restriction or no YouTube match",
+        "any": "any failed YouTube search or download",
+    }
     print(
         f"{colors.label('SoundCloud fallback:')} "
         + (
-            colors.success("enabled (age-restricted YouTube only)")
+            colors.success(
+                "enabled ("
+                + trigger_labels.get(
+                    source_config.soundcloud_trigger,
+                    source_config.soundcloud_trigger,
+                )
+                + ")"
+            )
             if source_config.soundcloud_enabled
             else colors.muted("disabled")
+        )
+    )
+    print(
+        f"{colors.label('SoundCloud ambiguity:')} "
+        + (
+            colors.success("take the best result")
+            if source_config.soundcloud_ambiguous == "best"
+            else colors.muted("ask on a terminal, otherwise skip")
         )
     )
 

@@ -11,6 +11,8 @@ from .constants import (
     DEFAULT_AUDIO_QUALITY,
     DEFAULT_LYRICS_TYPE,
     LYRICS_DEFAULT_ENABLED,
+    SOUNDCLOUD_DEFAULT_AMBIGUOUS,
+    SOUNDCLOUD_DEFAULT_TRIGGER,
 )
 from .errors import YoutubeSearchError
 from .files import make_filename
@@ -198,17 +200,27 @@ def _soundcloud_fallback(
     source_config,
     runtime,
     lyrics_type,
+    age_restricted=None,
 ):
-    """Search SoundCloud after an age restriction and download at most once.
+    """Search SoundCloud and download at most once.
 
     Nothing is downloaded until a single candidate is either confident or
     explicitly chosen by the user. Returns ``(ok, reason)``.
     """
-    print(
-        colors.warning(
-            "AGE-RESTRICTED: YouTube requires sign-in for this video."
+    if age_restricted is True:
+        print(
+            colors.warning(
+                "AGE-RESTRICTED: YouTube requires sign-in for this video."
+            )
         )
-    )
+
+    else:
+        print(
+            colors.muted(
+                "YouTube had no usable result; looking for the track "
+                "on SoundCloud."
+            )
+        )
 
     result = soundcloud.find_soundcloud_fallback(
         metadata["artist"],
@@ -217,6 +229,11 @@ def _soundcloud_fallback(
         enabled=source_config.soundcloud_enabled,
         min_score=source_config.soundcloud_min_score,
         min_margin=source_config.soundcloud_min_margin,
+        ambiguous=getattr(
+            source_config,
+            "soundcloud_ambiguous",
+            SOUNDCLOUD_DEFAULT_AMBIGUOUS,
+        ),
     )
 
     if not result.selected or not result.candidate:
@@ -284,6 +301,68 @@ def _soundcloud_fallback(
     )
 
     return ok, reason
+
+
+def _fallback_allowed(reason, source_config, age_restricted=None):
+    """Decide whether the SoundCloud fallback may run for this failure.
+
+    The trigger is configurable: ``age`` keeps the safe default of only an
+    age restriction, ``age-or-missing`` also covers a YouTube search that
+    found nothing usable, and ``any`` covers every failed search or
+    download. Error handling is otherwise unchanged.
+    """
+    if source_config is None or not source_config.soundcloud_enabled:
+        return False
+
+    trigger = getattr(
+        source_config,
+        "soundcloud_trigger",
+        SOUNDCLOUD_DEFAULT_TRIGGER,
+    )
+
+    if trigger == "age":
+        return age_restricted is True
+
+    if trigger == "age-or-missing":
+        if age_restricted is True:
+            return True
+
+        return reason in ("no confident YouTube match", "no YouTube result")
+
+    return trigger == "any"
+
+
+def _maybe_soundcloud_fallback(
+    reason,
+    metadata,
+    output,
+    title_only,
+    audio_format,
+    audio_quality,
+    source_config,
+    runtime,
+    lyrics_type,
+    age_restricted=None,
+):
+    """Run the SoundCloud fallback when the trigger allows it.
+
+    Returns the normal ``(ok, reason)`` pair, falling back to the original
+    failure reason when SoundCloud is not allowed or finds nothing.
+    """
+    if not _fallback_allowed(reason, source_config, age_restricted):
+        return False, reason
+
+    return _soundcloud_fallback(
+        metadata,
+        output,
+        title_only,
+        audio_format,
+        audio_quality,
+        source_config,
+        runtime,
+        lyrics_type,
+        age_restricted=age_restricted,
+    )
 
 
 def process_song(
@@ -367,14 +446,24 @@ def process_song(
 
     if not video:
         if youtube.LAST_SEARCH_HAD_CANDIDATES:
-            print(
-                f"{colors.error('FAILED:')} "
-                "No confident YouTube match"
-            )
-            return False, "no confident YouTube match"
+            reason = "no confident YouTube match"
+            print(f"{colors.error('FAILED:')} No confident YouTube match")
 
-        print(f"{colors.error('FAILED:')} No YouTube result")
-        return False, "no YouTube result"
+        else:
+            reason = "no YouTube result"
+            print(f"{colors.error('FAILED:')} No YouTube result")
+
+        return _maybe_soundcloud_fallback(
+            reason,
+            metadata,
+            output,
+            title_only,
+            audio_format,
+            audio_quality,
+            source_config,
+            runtime,
+            lyrics_type,
+        )
 
     video_url = (
         video.get("webpage_url")
@@ -411,18 +500,13 @@ def process_song(
     if ok or not download_failed:
         return ok, reason
 
-    # Only an age restriction opens the SoundCloud fallback. A metadata-only
-    # probe identifies the reason without touching YouTube authentication:
-    # network errors, private or unavailable videos and invalid URLs keep
-    # their existing handling and never search SoundCloud.
-    if not probe_age_restriction(video_url):
-        return False, reason
+    # A metadata-only probe identifies an age restriction without touching
+    # YouTube authentication. Other failures only reach SoundCloud when the
+    # user explicitly widened the trigger.
+    age_restricted = probe_age_restriction(video_url)
 
-    if source_config is None or not source_config.soundcloud_enabled:
-        print(f"{colors.error('FAILED:')} yt-dlp download failed")
-        return False, "yt-dlp download failed"
-
-    return _soundcloud_fallback(
+    return _maybe_soundcloud_fallback(
+        reason,
         metadata,
         output,
         title_only,
@@ -431,4 +515,5 @@ def process_song(
         source_config,
         runtime,
         lyrics_type,
+        age_restricted=age_restricted,
     )

@@ -147,6 +147,8 @@ def apply_config(args, parser, settings):
             "title_threshold",
             "soundcloud_min_score",
             "soundcloud_min_margin",
+            "soundcloud_trigger",
+            "soundcloud_ambiguous",
             "list_sources",
         ):
             continue

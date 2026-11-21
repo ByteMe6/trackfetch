@@ -199,7 +199,9 @@ trackfetch [-h] [-v] [--track ARTIST - TITLE ...] [-o OUTPUT] [--config CONFIG] 
 | `--delay` | `1.0` | Seconds to wait between songs. Raise it for long lists. |
 | `-s`, `--metadata-sources` | `itunes` | Comma-separated metadata priority, for example `deezer,itunes,musicbrainz`. `none` disables metadata lookups but keeps YouTube. A CLI selection overrides configured disabling for the selected providers. |
 | `--disable-sources` | — | Comma-separated sources to disable, for example `spotify,youtube` or `soundcloud`. Takes precedence over a CLI metadata selection for the same provider. |
-| `--soundcloud`, `--no-soundcloud` | on | Search SoundCloud when YouTube fails specifically with an age restriction. Other errors never trigger it. |
+| `--soundcloud`, `--no-soundcloud` | on | Search SoundCloud instead of failing, controlled by `--soundcloud-trigger`. |
+| `--soundcloud-trigger WHEN` | `age` | `age` (age-restricted videos only), `age-or-missing` (also when YouTube finds no confident match) or `any` (any failed search or download). |
+| `--soundcloud-ambiguous MODE` | `skip` | `skip` never downloads an ambiguous match without a terminal; `best` takes the highest scoring result, which non-interactive runs need. |
 | `--soundcloud-min-score` | `0.75` | Minimum candidate score before trackfetch downloads without asking. |
 | `--soundcloud-min-margin` | `0.08` | Score gap required between the best two SoundCloud results before picking one automatically. |
 | `--provider-opt` | — | Provider setting as `NAME.KEY=VALUE`, for example `itunes.country=ua`. Can be repeated. |
@@ -479,6 +481,8 @@ youtube_enabled = true
 
 # SoundCloud fallback for age-restricted YouTube videos
 soundcloud_enabled = true
+soundcloud_trigger = age
+soundcloud_ambiguous = skip
 soundcloud_min_score = 0.75
 soundcloud_min_margin = 0.08
 
@@ -613,7 +617,7 @@ A [tldr](https://tldr.sh/) page is in [`docs/tldr/trackfetch.md`](https://github
    If the artist query finds nothing, trackfetch retries with `<title>` and then `<title> Topic`; title-only results need artist evidence, so covers and same-title songs by other artists are rejected. When all three find nothing usable, it falls back to the YouTube Music search, which is not filtered for some topics the way anonymous YouTube search is. Each YouTube Music candidate is checked against its full video details: the title must be close, the artist (or channel) must match, and known durations may differ by at most 10 seconds.
 
 3. **Download.** yt-dlp downloads only the winning video and converts it to the chosen format. `m4a` and `opus` keep YouTube's original audio, `mp3` re-encodes it.
-4. **Age-restricted videos.** If the download fails specifically with an age restriction (`Sign in to confirm your age`), trackfetch searches SoundCloud for an independently available copy with yt-dlp's `scsearch`. This is not a bypass of YouTube's age verification: no cookies, credentials or alternate clients are used, and every other error (network, unavailable, private, invalid URL) keeps the normal failure handling. Up to five results are scored, 40% title, 30% artist, 20% duration and 10% metadata consistency. Previews (including the 30-second sample), remixes, covers, live and instrumental versions are rejected. Only a single result above `soundcloud_min_score` and clearly ahead of the runner-up is downloaded automatically; otherwise the options are printed and an interactive run asks which one to use. Metadata is fetched with `--dump-single-json` before anything is downloaded, and a fallback is attempted at most once per song.
+4. **SoundCloud fallback.** If YouTube fails in the way `soundcloud_trigger` allows — by default only an age restriction (`Sign in to confirm your age`) — trackfetch searches SoundCloud for an independently available copy with yt-dlp's `scsearch`. This is not a bypass of YouTube's age verification: no cookies, credentials or alternate clients are used, and every other error (network, unavailable, private, invalid URL) keeps the normal failure handling. Up to five results are scored, 40% title, 30% artist, 20% duration and 10% metadata consistency. Previews (including the 30-second sample), remixes, covers, live and instrumental versions are rejected. Only a single result above `soundcloud_min_score` and clearly ahead of the runner-up is downloaded automatically. When several results are equally plausible, `soundcloud_ambiguous` decides: `skip` prints the options and asks on a terminal (a piped or `nohup` run skips the song), while `best` takes the highest scoring result without asking. Metadata is fetched with `--dump-single-json` before anything is downloaded, and a fallback is attempted at most once per song.
 5. **Tag.** trackfetch replaces any existing tags with these ID3v2.3 frames:
 
    | Frame | Content |

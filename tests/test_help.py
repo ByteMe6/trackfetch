@@ -237,6 +237,8 @@ class TestGroups:
             "spotify_client_id",
             "spotify_client_secret",
             "soundcloud_enabled",
+            "soundcloud_trigger",
+            "soundcloud_ambiguous",
             "soundcloud_min_score",
             "soundcloud_min_margin",
         } == dests

@@ -21,6 +21,7 @@ from unidecode import unidecode
 from . import colors
 from .constants import (
     SOUNDCLOUD_ARTIST_WEIGHT,
+    SOUNDCLOUD_DEFAULT_AMBIGUOUS,
     SOUNDCLOUD_DEFAULT_ENABLED,
     SOUNDCLOUD_DETAILS_LIMIT,
     SOUNDCLOUD_DETAILS_TIMEOUT,
@@ -1002,6 +1003,7 @@ def find_soundcloud_fallback(
     enabled=SOUNDCLOUD_DEFAULT_ENABLED,
     min_score=SOUNDCLOUD_MIN_SCORE,
     min_margin=SOUNDCLOUD_MIN_MARGIN,
+    ambiguous=SOUNDCLOUD_DEFAULT_AMBIGUOUS,
     limit=SOUNDCLOUD_SEARCH_LIMIT,
     chooser=None,
     attempt_key=None,
@@ -1091,6 +1093,24 @@ def find_soundcloud_fallback(
 
     elif status == STATUS_AMBIGUOUS:
         print(colors.muted("Several SoundCloud results are close."))
+
+        if ambiguous == "best" and approved:
+            # Non-interactive mode: take the runner-up-aware top result
+            # instead of asking, because there is no terminal to ask on.
+            print(
+                colors.muted(
+                    "Taking the highest scoring SoundCloud result "
+                    "(non-interactive)."
+                )
+            )
+            best = dict(approved[0])
+            best.pop("reject_reason", None)
+            return FallbackResult(
+                STATUS_SELECTED,
+                candidate=best,
+                candidates=ranked,
+            )
+
         result = FallbackResult(STATUS_AMBIGUOUS, candidates=approved)
 
     else:
