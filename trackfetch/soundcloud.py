@@ -1124,11 +1124,15 @@ def find_soundcloud_fallback(
                 if parsed is not None
             ]
 
+            # The duration came from the mismatched metadata record, so it
+            # describes a different recording. Keep it out of scoring rather
+            # than penalizing a correct full-length upload for not matching
+            # the wrong track's length.
             other_ranked = _rank_with_details(
                 other_candidates,
                 other_artist,
                 other_title,
-                duration,
+                None,
                 details_limit,
                 details_func,
             )
@@ -1161,10 +1165,29 @@ def find_soundcloud_fallback(
         best = approved[0]
         print(
             colors.muted(
-                "Best SoundCloud match is not confident enough "
+                "Best SoundCloud match is below the confidence threshold "
                 f"({best.get('score', 0):.2f} < {min_score:.2f})."
             )
         )
+
+        if ambiguous == "best":
+            print(
+                colors.warning(
+                    "Taking the highest scoring SoundCloud result anyway "
+                    f"({best.get('score', 0):.2f}, "
+                    f"{best.get('title', 'Unknown')}) because "
+                    "soundcloud_ambiguous is 'best'. "
+                    "Check the file if it matters."
+                )
+            )
+            chosen = dict(best)
+            chosen.pop("reject_reason", None)
+            return FallbackResult(
+                STATUS_SELECTED,
+                candidate=chosen,
+                candidates=ranked,
+            )
+
         result = FallbackResult(
             STATUS_LOW_CONFIDENCE,
             candidates=approved,

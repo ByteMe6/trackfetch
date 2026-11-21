@@ -4,6 +4,20 @@ All notable changes to this project are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [2.3.3] - 2026-11-21
+
+### Fixed
+- When the fallback retried with the input names, it still scored the
+  candidates against the duration from the *mismatched* metadata record.
+  A correct full-length upload was then penalized for not matching another
+  track's length (2:22 vs 2:41 scored 0.74 and was skipped). The retry now
+  leaves duration out of scoring, because that number describes a different
+  recording.
+- `soundcloud_ambiguous = best` now also resolves a result that is merely
+  below `soundcloud_min_score` instead of only ties. It prints a warning
+  with the score and title, so an unattended run can finish while the log
+  still shows what was picked and why.
+
 ## [2.3.2] - 2026-11-21
 
 ### Added

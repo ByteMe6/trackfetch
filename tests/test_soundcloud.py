@@ -1495,3 +1495,84 @@ class TestBotWallClassification:
 
         assert m.is_bot_check_error(text) is True
         assert m.is_age_restriction_error(text) is False
+
+
+class TestRetryIgnoresMismatchedDuration:
+    def test_full_upload_is_not_penalized_for_the_wrong_tracks_duration(
+        self, monkeypatch
+    ):
+        """Metadata said 161s for a different act; the real track is 222s."""
+
+        def fake_search(query, limit=5):
+            if query.startswith("MintiLove"):
+                return [entry("1", "Альтушка", duration=30, artist="MintiLove")]
+
+            return [
+                entry(
+                    "2",
+                    "Neverlove - Альтушка",
+                    duration=222,
+                    uploader="безымянный проект.",
+                )
+            ]
+
+        monkeypatch.setattr(soundcloud, "soundcloud_search", fake_search)
+
+        result = soundcloud.find_soundcloud_fallback(
+            "MintiLove",
+            "Альтушка",
+            161,
+            ambiguous="best",
+            fallback_names=("Neverlove", "Альтушка"),
+            attempt_key="retry-duration",
+        )
+
+        assert result.selected
+        assert result.candidate["id"] == "2"
+        assert result.candidate["score"] >= soundcloud.SOUNDCLOUD_MIN_SCORE
+
+
+class TestBestModeLowConfidence:
+    def test_best_mode_takes_an_approved_result_below_the_threshold(
+        self, monkeypatch
+    ):
+        monkeypatch.setattr(
+            soundcloud,
+            "soundcloud_search",
+            lambda query, limit=5: [
+                entry("1", "Artist - Song", duration=200, uploader="Artist"),
+            ],
+        )
+
+        result = soundcloud.find_soundcloud_fallback(
+            "Artist",
+            "Song",
+            200,
+            ambiguous="best",
+            min_score=0.99,
+            chooser=lambda items: pytest.fail("must not ask"),
+            attempt_key="best-low",
+        )
+
+        assert result.selected
+
+    def test_skip_mode_still_refuses_below_the_threshold(self, monkeypatch):
+        monkeypatch.setattr(
+            soundcloud,
+            "soundcloud_search",
+            lambda query, limit=5: [
+                entry("1", "Artist - Song", duration=200, uploader="Artist"),
+            ],
+        )
+
+        result = soundcloud.find_soundcloud_fallback(
+            "Artist",
+            "Song",
+            200,
+            ambiguous="skip",
+            min_score=0.99,
+            attempt_key="skip-low",
+        )
+
+        assert not result.selected
+        assert result.status == soundcloud.STATUS_LOW_CONFIDENCE
