@@ -73,6 +73,11 @@ PROVIDER_DEFAULTS = {
     },
 }
 
+# Music providers, in the order they are tried. YouTube is the default
+# primary source; SoundCloud is the fallback it already was.
+MUSIC_PROVIDERS = ("youtube", "soundcloud")
+DEFAULT_MUSIC_SOURCES = ("youtube", "soundcloud")
+
 DEFAULT_MATCH_THRESHOLD = 0.6
 DEFAULT_TITLE_THRESHOLD = 0.8
 # YouTube candidates below this score are treated as "no confident match".

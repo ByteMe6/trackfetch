@@ -138,11 +138,12 @@ one registry entry.
   only translate an API response into the common metadata dict. Thresholds,
   priority, cooldowns and caching live in `providers/resolver.py`.
 - **The pipeline is the only place that knows the full download order.**
-  Resolve metadata → pick a filename → search YouTube → download audio →
-  download cover → embed tags and lyrics → move the finished file. If,
-  and only if, the download failed specifically because of a YouTube age
-  restriction, the SoundCloud fallback runs once before the song is marked
-  failed.
+  Resolve metadata → pick a filename → try the configured music providers in
+  priority order → download audio → download cover → embed tags and lyrics →
+  move the finished file. With the default `youtube,soundcloud` priority,
+  SoundCloud runs once when YouTube fails in the way the trigger allows. With
+  `soundcloud,youtube`, SoundCloud is searched first and YouTube is the
+  fallback.
 - **`soundcloud.py` is pure matching plus two yt-dlp calls.** It never
   downloads audio; it returns a ranked, filtered candidate list and the
   pipeline downloads at most one URL. This keeps the scoring testable with

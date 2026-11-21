@@ -26,6 +26,7 @@ def make_args(**overrides):
 def make_config(
     sources,
     youtube=True,
+    soundcloud=True,
     disabled=(),
     thresholds=(0.6, 0.8),
     none_selected=False,
@@ -45,6 +46,7 @@ def make_config(
         thresholds[0],
         thresholds[1],
         none_selected,
+        soundcloud_enabled=soundcloud,
     )
 
 
@@ -355,6 +357,193 @@ class TestSourceResolution:
 
         assert config.match_threshold == 0.4
         assert config.title_threshold == 0.7
+
+
+class TestMusicSources:
+    """Priority and disabling of the music providers (YouTube/SoundCloud)."""
+
+    def test_default_priority_keeps_youtube_first(self):
+        config = m.build_source_config(make_args(), {})
+
+        assert config.music_sources == ["youtube", "soundcloud"]
+        assert config.primary_music_source == "youtube"
+        assert config.is_music_enabled("youtube")
+        assert config.is_music_enabled("soundcloud")
+
+    def test_custom_priority_is_preserved(self):
+        config = m.build_source_config(
+            make_args(music_sources="soundcloud, youtube"),
+            {},
+        )
+
+        assert config.music_sources == ["soundcloud", "youtube"]
+        assert config.primary_music_source == "soundcloud"
+
+    def test_duplicate_music_sources_are_removed(self):
+        config = m.build_source_config(
+            make_args(music_sources="soundcloud,SOUNDCLOUD,youtube"),
+            {},
+        )
+
+        assert config.music_sources == ["soundcloud", "youtube"]
+
+    def test_unknown_music_source_is_rejected(self):
+        with pytest.raises(ValueError, match="Unknown music source"):
+            m.build_source_config(
+                make_args(music_sources="youtube,napster"),
+                {},
+            )
+
+    @pytest.mark.parametrize("value", ["", " , "])
+    def test_empty_music_source_list_is_rejected(self, value):
+        with pytest.raises(ValueError, match="At least one music source"):
+            m.build_source_config(make_args(music_sources=value), {})
+
+    def test_music_source_from_config(self):
+        config = m.build_source_config(
+            make_args(),
+            {"music_sources": "soundcloud,youtube"},
+        )
+
+        assert config.music_sources == ["soundcloud", "youtube"]
+
+    def test_cli_music_priority_overrides_config(self):
+        config = m.build_source_config(
+            make_args(music_sources="youtube,soundcloud"),
+            {"music_sources": "soundcloud,youtube"},
+        )
+
+        assert config.music_sources == ["youtube", "soundcloud"]
+
+    def test_soundcloud_can_be_removed_from_priority(self):
+        config = m.build_source_config(
+            make_args(music_sources="youtube"),
+            {},
+        )
+
+        assert config.music_sources == ["youtube"]
+        assert config.soundcloud_enabled is False
+
+    def test_youtube_can_be_removed_from_priority(self):
+        config = m.build_source_config(
+            make_args(music_sources="soundcloud"),
+            {},
+        )
+
+        assert config.music_sources == ["soundcloud"]
+        assert config.youtube_enabled is False
+        assert config.primary_music_source == "soundcloud"
+
+    def test_config_flags_remove_music_sources(self):
+        no_youtube = m.build_source_config(
+            make_args(),
+            {"youtube_enabled": "false"},
+        )
+        no_soundcloud = m.build_source_config(
+            make_args(),
+            {"soundcloud_enabled": "false"},
+        )
+
+        assert no_youtube.music_sources == ["soundcloud"]
+        assert no_soundcloud.music_sources == ["youtube"]
+
+    def test_disable_sources_removes_music_sources(self):
+        no_youtube = m.build_source_config(
+            make_args(disable_sources="youtube"),
+            {},
+        )
+        no_soundcloud = m.build_source_config(
+            make_args(disable_sources="soundcloud"),
+            {},
+        )
+
+        assert no_youtube.music_sources == ["soundcloud"]
+        assert no_soundcloud.music_sources == ["youtube"]
+
+    def test_both_disabled_is_rejected(self):
+        with pytest.raises(ValueError, match="At least one music source"):
+            m.build_source_config(
+                make_args(music_sources="youtube", disable_sources="youtube"),
+                {},
+            )
+
+        with pytest.raises(ValueError, match="At least one music source"):
+            m.build_source_config(
+                make_args(),
+                {
+                    "youtube_enabled": "false",
+                    "soundcloud_enabled": "false",
+                },
+            )
+
+    def test_cli_no_youtube_flag_removes_it(self):
+        config = m.build_source_config(
+            make_args(youtube_enabled=False),
+            {},
+        )
+
+        assert config.music_sources == ["soundcloud"]
+
+    def test_cli_yes_youtube_flag_appends_it(self):
+        config = m.build_source_config(
+            make_args(
+                music_sources="soundcloud",
+                youtube_enabled=True,
+            ),
+            {},
+        )
+
+        assert config.music_sources == ["soundcloud", "youtube"]
+
+    def test_cli_list_overrides_config_disable(self):
+        config = m.build_source_config(
+            make_args(music_sources="youtube,soundcloud"),
+            {
+                "youtube_enabled": "false",
+                "disable_sources": "soundcloud",
+            },
+        )
+
+        assert config.music_sources == ["youtube", "soundcloud"]
+
+    def test_explicit_music_list_ignores_config_enable(self):
+        from_cli = m.build_source_config(
+            make_args(music_sources="soundcloud"),
+            {"youtube_enabled": "true"},
+        )
+        from_config = m.build_source_config(
+            make_args(),
+            {
+                "music_sources": "youtube",
+                "soundcloud_enabled": "true",
+            },
+        )
+
+        assert from_cli.music_sources == ["soundcloud"]
+        assert from_config.music_sources == ["youtube"]
+
+    def test_cli_disable_wins_over_cli_list(self):
+        config = m.build_source_config(
+            make_args(
+                music_sources="youtube,soundcloud",
+                disable_sources="youtube",
+            ),
+            {},
+        )
+
+        assert config.music_sources == ["soundcloud"]
+
+    def test_soundcloud_trigger_does_not_change_priority(self):
+        config = m.build_source_config(
+            make_args(
+                music_sources="youtube,soundcloud",
+                soundcloud_trigger="any",
+            ),
+            {},
+        )
+
+        assert config.music_sources == ["youtube", "soundcloud"]
+        assert config.soundcloud_trigger == "any"
 
 
 class TestNumericValidation:
@@ -2103,7 +2292,7 @@ class TestYoutubeFallback:
             "find_youtube_video",
             lambda artist, title, duration=None: calls.append((artist, title)),
         )
-        config = make_config([], youtube=False, none_selected=True)
+        config = make_config([], youtube=False, soundcloud=False, none_selected=True)
 
         ok, reason = m.process_song(
             None,
@@ -2116,64 +2305,34 @@ class TestYoutubeFallback:
             runtime=make_runtime(),
         )
 
-        assert (ok, reason) == (False, "YouTube disabled")
+        assert (ok, reason) == (False, "no music sources enabled")
         assert calls == []
 
-    def test_cli_youtube_disable_prevents_network_calls(
-        self, monkeypatch, tmp_path
-    ):
-        calls = []
-        monkeypatch.setattr(
-            m.pipeline,
-            "find_youtube_video",
-            lambda artist, title, duration=None: calls.append((artist, title)),
-        )
+    def test_cli_youtube_disable_leaves_soundcloud_only(self):
         config = m.build_source_config(
             make_args(disable_sources="youtube"),
             {},
         )
 
-        ok, reason = m.process_song(
-            None,
-            "Daft Punk",
-            "One More Time",
-            tmp_path,
-            False,
-            "m4a",
-            source_config=config,
-            runtime=make_runtime(),
-        )
+        assert config.music_sources == ["soundcloud"]
+        assert config.youtube_enabled is False
+        assert config.soundcloud_enabled is True
 
-        assert (ok, reason) == (False, "YouTube disabled")
-        assert calls == []
+    def test_both_music_sources_disabled_is_rejected(self):
+        with pytest.raises(ValueError, match="At least one music source"):
+            m.build_source_config(
+                make_args(disable_sources="youtube,soundcloud"),
+                {},
+            )
 
-    def test_config_youtube_disable_prevents_network_calls(
-        self, monkeypatch, tmp_path
-    ):
-        calls = []
-        monkeypatch.setattr(
-            m.pipeline,
-            "find_youtube_video",
-            lambda artist, title, duration=None: calls.append((artist, title)),
-        )
-        config = m.build_source_config(
-            make_args(),
-            {"youtube_enabled": "false"},
-        )
-
-        ok, reason = m.process_song(
-            None,
-            "Daft Punk",
-            "One More Time",
-            tmp_path,
-            False,
-            "m4a",
-            source_config=config,
-            runtime=make_runtime(),
-        )
-
-        assert (ok, reason) == (False, "YouTube disabled")
-        assert calls == []
+        with pytest.raises(ValueError, match="At least one music source"):
+            m.build_source_config(
+                make_args(),
+                {
+                    "youtube_enabled": "false",
+                    "soundcloud_enabled": "false",
+                },
+            )
 
     def test_none_metadata_still_uses_youtube(self, monkeypatch, tmp_path):
         import shutil

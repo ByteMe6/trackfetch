@@ -208,13 +208,21 @@ def _soundcloud_fallback(
     lyrics_type,
     age_restricted=None,
     fallback_names=None,
+    primary=False,
 ):
     """Search SoundCloud and download at most once.
 
     Nothing is downloaded until a single candidate is either confident or
     explicitly chosen by the user. Returns ``(ok, reason)``.
     """
-    if age_restricted is True:
+    if primary:
+        print(
+            colors.muted(
+                "Searching SoundCloud as the primary music source."
+            )
+        )
+
+    elif age_restricted is True:
         print(
             colors.warning(
                 "AGE-RESTRICTED: YouTube requires sign-in for this video."
@@ -394,6 +402,128 @@ def _maybe_soundcloud_fallback(
     )
 
 
+def _youtube_attempt(
+    metadata,
+    output,
+    title_only,
+    audio_format,
+    audio_quality,
+    source_config,
+    runtime,
+    lyrics_type,
+    youtube_enabled,
+    fallback_names=None,
+    allow_soundcloud_fallback=True,
+):
+    """Search YouTube, download one result and optionally fall back.
+
+    Returns the usual ``(ok, reason)`` pair. When SoundCloud is the primary
+    source and YouTube is only the fallback, the caller passes
+    ``allow_soundcloud_fallback=False`` so a failure does not loop back to
+    SoundCloud.
+    """
+    youtube.LAST_SEARCH_HAD_CANDIDATES = False
+
+    try:
+        video = find_youtube_video(
+            metadata["artist"],
+            metadata["title"],
+            metadata.get("duration"),
+        )
+
+    except YoutubeSearchError as error:
+        print(f"{colors.error('FAILED:')} yt-dlp search failed: {error}")
+        return False, "yt-dlp search failed"
+
+    if not video:
+        if youtube.LAST_SEARCH_HAD_CANDIDATES:
+            reason = "no confident YouTube match"
+            print(f"{colors.error('FAILED:')} No confident YouTube match")
+
+        else:
+            reason = "no YouTube result"
+            print(f"{colors.error('FAILED:')} No YouTube result")
+
+        if not allow_soundcloud_fallback:
+            return False, reason
+
+        return _maybe_soundcloud_fallback(
+            reason,
+            metadata,
+            output,
+            title_only,
+            audio_format,
+            audio_quality,
+            source_config,
+            runtime,
+            lyrics_type,
+            fallback_names=fallback_names,
+        )
+
+    video_url = (
+        video.get("webpage_url")
+        or video.get("url")
+    )
+
+    if not video_url:
+        video_id = video.get("id")
+
+        if video_id:
+            video_url = (
+                "https://www.youtube.com/watch?v="
+                + video_id
+            )
+
+    if not video_url:
+        print(f"{colors.error('FAILED:')} Invalid YouTube result")
+        return False, "invalid YouTube result"
+
+    ok, reason, download_failed = _download_and_tag(
+        metadata,
+        video,
+        video_url,
+        output,
+        title_only,
+        audio_format,
+        audio_quality,
+        source_config,
+        runtime,
+        lyrics_type,
+        youtube_enabled,
+    )
+
+    if ok or not download_failed:
+        return ok, reason
+
+    if not allow_soundcloud_fallback:
+        return False, reason
+
+    # The download's own stderr is the most reliable signal: a bot check
+    # often lets --dump-single-json through and only fails here. Fall back
+    # to the metadata probe for yt-dlp versions that stay quiet.
+    download_error = youtube.LAST_DOWNLOAD_ERROR
+    age_restricted = is_age_restriction_error(download_error)
+    blocked = is_bot_check_error(download_error)
+
+    if not age_restricted and not blocked:
+        age_restricted = probe_age_restriction(video_url)
+
+    return _maybe_soundcloud_fallback(
+        reason,
+        metadata,
+        output,
+        title_only,
+        audio_format,
+        audio_quality,
+        source_config,
+        runtime,
+        lyrics_type,
+        age_restricted=age_restricted,
+        blocked=blocked,
+        fallback_names=fallback_names,
+    )
+
+
 def process_song(
     sp,
     input_artist,
@@ -456,34 +586,28 @@ def process_song(
         print(f"{colors.skip('SKIP:')} already exists: {filename}")
         return True, "exists"
 
-    if not youtube_enabled:
-        print(f"{colors.error('FAILED:')} YouTube is disabled")
-        return False, "YouTube disabled"
+    if source_config is None:
+        music_sources = ["youtube"]
+    else:
+        music_sources = list(getattr(source_config, "music_sources", ()) or [])
 
-    youtube.LAST_SEARCH_HAD_CANDIDATES = False
+        if not music_sources:
+            # Hand-built configurations predate music_sources.
+            music_sources = [
+                name
+                for name, enabled in (
+                    ("youtube", source_config.youtube_enabled),
+                    ("soundcloud", source_config.soundcloud_enabled),
+                )
+                if enabled
+            ]
 
-    try:
-        video = find_youtube_video(
-            metadata["artist"],
-            metadata["title"],
-            metadata.get("duration"),
-        )
+    if not music_sources:
+        print(f"{colors.error('FAILED:')} No music sources enabled")
+        return False, "no music sources enabled"
 
-    except YoutubeSearchError as error:
-        print(f"{colors.error('FAILED:')} yt-dlp search failed: {error}")
-        return False, "yt-dlp search failed"
-
-    if not video:
-        if youtube.LAST_SEARCH_HAD_CANDIDATES:
-            reason = "no confident YouTube match"
-            print(f"{colors.error('FAILED:')} No confident YouTube match")
-
-        else:
-            reason = "no YouTube result"
-            print(f"{colors.error('FAILED:')} No YouTube result")
-
-        return _maybe_soundcloud_fallback(
-            reason,
+    if music_sources[0] == "soundcloud":
+        ok, reason = _soundcloud_fallback(
             metadata,
             output,
             title_only,
@@ -493,30 +617,41 @@ def process_song(
             runtime,
             lyrics_type,
             fallback_names=(input_artist, input_title),
+            primary=True,
         )
 
-    video_url = (
-        video.get("webpage_url")
-        or video.get("url")
-    )
+        if ok:
+            return ok, reason
 
-    if not video_url:
-        video_id = video.get("id")
+        if "youtube" not in music_sources:
+            return ok, reason
 
-        if video_id:
-            video_url = (
-                "https://www.youtube.com/watch?v="
-                + video_id
+        print(
+            colors.muted(
+                "SoundCloud did not produce a track; trying YouTube."
             )
+        )
 
-    if not video_url:
-        print(f"{colors.error('FAILED:')} Invalid YouTube result")
-        return False, "invalid YouTube result"
+        return _youtube_attempt(
+            metadata,
+            output,
+            title_only,
+            audio_format,
+            audio_quality,
+            source_config,
+            runtime,
+            lyrics_type,
+            youtube_enabled,
+            fallback_names=(input_artist, input_title),
+            allow_soundcloud_fallback=False,
+        )
 
-    ok, reason, download_failed = _download_and_tag(
+    if not youtube_enabled:
+        print(f"{colors.error('FAILED:')} YouTube is disabled")
+        return False, "YouTube disabled"
+
+    return _youtube_attempt(
         metadata,
-        video,
-        video_url,
         output,
         title_only,
         audio_format,
@@ -525,32 +660,6 @@ def process_song(
         runtime,
         lyrics_type,
         youtube_enabled,
-    )
-
-    if ok or not download_failed:
-        return ok, reason
-
-    # The download's own stderr is the most reliable signal: a bot check
-    # often lets --dump-single-json through and only fails here. Fall back
-    # to the metadata probe for yt-dlp versions that stay quiet.
-    download_error = youtube.LAST_DOWNLOAD_ERROR
-    age_restricted = is_age_restriction_error(download_error)
-    blocked = is_bot_check_error(download_error)
-
-    if not age_restricted and not blocked:
-        age_restricted = probe_age_restriction(video_url)
-
-    return _maybe_soundcloud_fallback(
-        reason,
-        metadata,
-        output,
-        title_only,
-        audio_format,
-        audio_quality,
-        source_config,
-        runtime,
-        lyrics_type,
-        age_restricted=age_restricted,
-        blocked=blocked,
         fallback_names=(input_artist, input_title),
+        allow_soundcloud_fallback="soundcloud" in music_sources,
     )

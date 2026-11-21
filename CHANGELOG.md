@@ -4,6 +4,20 @@ All notable changes to this project are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+- `music_sources` and `--music-sources` choose the priority of the music
+  providers, separately from metadata providers. The default
+  `youtube,soundcloud` keeps YouTube primary and SoundCloud as the
+  trigger-controlled fallback; `soundcloud,youtube` tries SoundCloud first and
+  uses YouTube only when it finds no usable track.
+- `--youtube`/`--no-youtube` plus the existing `youtube_enabled`,
+  `soundcloud_enabled`, `--soundcloud`/`--no-soundcloud` and
+  `--disable-sources` can remove either music provider entirely. Disabling both
+  stops with a clear error.
+- `--list-sources` and the run header now show the music provider priority.
+
 ## [2.3.3] - 2026-11-21
 
 ### Fixed

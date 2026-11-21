@@ -229,6 +229,7 @@ class TestGroups:
 
         assert {
             "metadata_sources",
+            "music_sources",
             "disable_sources",
             "provider_opt",
             "match_threshold",
@@ -236,6 +237,7 @@ class TestGroups:
             "list_sources",
             "spotify_client_id",
             "spotify_client_secret",
+            "youtube_enabled",
             "soundcloud_enabled",
             "soundcloud_trigger",
             "soundcloud_ambiguous",

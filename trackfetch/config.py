@@ -15,10 +15,12 @@ from .constants import (
     DEFAULT_LYRICS_TYPE,
     DEFAULT_MATCH_THRESHOLD,
     DEFAULT_METADATA_SOURCES,
+    DEFAULT_MUSIC_SOURCES,
     DEFAULT_TITLE_THRESHOLD,
     LYRICS_DEFAULT_ENABLED,
     LYRICS_TYPES,
     METADATA_PROVIDERS,
+    MUSIC_PROVIDERS,
     PROVIDER_DEFAULTS,
     PROVIDER_OPTIONS,
     SOUNDCLOUD_AMBIGUOUS_MODES,
@@ -29,7 +31,6 @@ from .constants import (
     SOUNDCLOUD_MIN_SCORE,
     SOUNDCLOUD_TRIGGERS,
     VOCALOID_HINTS,
-    YOUTUBE_DEFAULT_ENABLED,
 )
 
 
@@ -52,6 +53,7 @@ class SourceConfig:
         soundcloud_min_margin=SOUNDCLOUD_MIN_MARGIN,
         soundcloud_trigger=SOUNDCLOUD_DEFAULT_TRIGGER,
         soundcloud_ambiguous=SOUNDCLOUD_DEFAULT_AMBIGUOUS,
+        music_sources=None,
     ):
         self.metadata_sources = list(metadata_sources)
         self.youtube_enabled = bool(youtube_enabled)
@@ -67,6 +69,27 @@ class SourceConfig:
         self.soundcloud_min_margin = soundcloud_min_margin
         self.soundcloud_trigger = soundcloud_trigger
         self.soundcloud_ambiguous = soundcloud_ambiguous
+
+        if music_sources is None:
+            # Keep direct SourceConfig users compatible: derive the priority
+            # from the two legacy enabled flags.
+            music_sources = [
+                name
+                for name, enabled in (
+                    ("youtube", self.youtube_enabled),
+                    ("soundcloud", self.soundcloud_enabled),
+                )
+                if enabled
+            ]
+
+        self.music_sources = list(music_sources)
+
+    def is_music_enabled(self, name: str) -> bool:
+        return name in self.music_sources
+
+    @property
+    def primary_music_source(self):
+        return self.music_sources[0] if self.music_sources else None
 
     def interval(self, name: str) -> float:
         return self.providers[name]["min_interval"]
@@ -101,6 +124,29 @@ def normalize_metadata_sources(value: str):
 
         if name not in names:
             names.append(name)
+
+    return names
+
+
+def normalize_music_sources(value: str):
+    """Validate and de-duplicate a music provider list, preserving order."""
+    names = []
+
+    for name in split_source_names(value):
+        if name not in MUSIC_PROVIDERS:
+            raise ValueError(
+                f"Unknown music source '{name}' "
+                f"(choose from {', '.join(MUSIC_PROVIDERS)})"
+            )
+
+        if name not in names:
+            names.append(name)
+
+    if not names:
+        raise ValueError(
+            "At least one music source is required "
+            f"(choose from {', '.join(MUSIC_PROVIDERS)})"
+        )
 
     return names
 
@@ -342,7 +388,6 @@ def build_source_config(args, settings):
             getattr(args, "disable_sources", None) or ""
         )
     )
-    all_disabled_sources = config_disabled_sources | cli_disabled_sources
 
     config_disables = config_disabled | (
         config_disabled_sources - set(ARTWORK_FALLBACKS)
@@ -383,16 +428,87 @@ def build_source_config(args, settings):
         providers[name]["enabled"] = name in sources
         providers[name]["disabled"] = name in disabled_for_promotion
 
-    youtube_enabled = YOUTUBE_DEFAULT_ENABLED
+    # Music providers follow the same precedence as metadata providers:
+    # CLI list > config list > defaults, with explicit disables always winning
+    # and explicit enables appending to the configured priority.
+    config_music_enabled = set()
+    config_music_disabled = set()
 
-    if "youtube_enabled" in settings and str(settings["youtube_enabled"]).strip():
-        youtube_enabled = parse_bool(
-            settings["youtube_enabled"],
-            "youtube_enabled",
+    for name in MUSIC_PROVIDERS:
+        key = f"{name}_enabled"
+
+        if key in settings and str(settings[key]).strip():
+            enabled = parse_bool(settings[key], key)
+
+            if enabled:
+                config_music_enabled.add(name)
+            else:
+                config_music_disabled.add(name)
+
+    config_music_disabled |= config_disabled_sources & set(MUSIC_PROVIDERS)
+
+    cli_music_enabled = set()
+    cli_music_disabled = set()
+
+    for name in MUSIC_PROVIDERS:
+        value = getattr(args, f"{name}_enabled", None)
+
+        if value is not None:
+            if value:
+                cli_music_enabled.add(name)
+            else:
+                cli_music_disabled.add(name)
+
+    cli_music_disabled |= cli_disabled_sources & set(MUSIC_PROVIDERS)
+
+    cli_music_raw = getattr(args, "music_sources", None)
+    cli_music_given = cli_music_raw is not None
+    raw_music = (
+        cli_music_raw
+        if cli_music_given
+        else config_str_value(settings, "music_sources")
+    )
+
+    if raw_music is None:
+        music_sources = list(DEFAULT_MUSIC_SOURCES)
+    else:
+        music_sources = normalize_music_sources(raw_music)
+
+    if cli_music_given:
+        # An explicit CLI priority list overrides configured disabling and
+        # `*_enabled=false` for the providers it names.
+        remove = set(cli_music_disabled)
+    else:
+        remove = (config_music_disabled - cli_music_enabled) | set(
+            cli_music_disabled
         )
 
-    if "youtube" in all_disabled_sources:
-        youtube_enabled = False
+    music_sources = [name for name in music_sources if name not in remove]
+
+    append_enabled = set(cli_music_enabled)
+
+    # An explicit priority list is authoritative: a stale `*_enabled = true`
+    # in the config file must not add a provider back to it. The flags still
+    # append on the command line, because they are an explicit request.
+    if raw_music is None:
+        append_enabled |= config_music_enabled
+
+    for name in MUSIC_PROVIDERS:
+        if (
+            name in append_enabled
+            and name not in music_sources
+            and name not in remove
+        ):
+            music_sources.append(name)
+
+    if not music_sources:
+        raise ValueError(
+            "At least one music source must stay enabled "
+            f"(choose from {', '.join(MUSIC_PROVIDERS)})"
+        )
+
+    youtube_enabled = "youtube" in music_sources
+    soundcloud_enabled = "soundcloud" in music_sources
 
     lyrics_enabled = LYRICS_DEFAULT_ENABLED
 
@@ -463,25 +579,6 @@ def build_source_config(args, settings):
         ),
         "title_threshold",
     )
-
-    soundcloud_enabled = SOUNDCLOUD_DEFAULT_ENABLED
-
-    if (
-        "soundcloud_enabled" in settings
-        and str(settings["soundcloud_enabled"]).strip()
-    ):
-        soundcloud_enabled = parse_bool(
-            settings["soundcloud_enabled"],
-            "soundcloud_enabled",
-        )
-
-    if "soundcloud" in all_disabled_sources:
-        soundcloud_enabled = False
-
-    cli_soundcloud = getattr(args, "soundcloud_enabled", None)
-
-    if cli_soundcloud is not None:
-        soundcloud_enabled = bool(cli_soundcloud)
 
     soundcloud_min_score = threshold_value(
         getattr(args, "soundcloud_min_score", None),
@@ -568,6 +665,7 @@ def build_source_config(args, settings):
         soundcloud_min_margin,
         soundcloud_trigger,
         soundcloud_ambiguous,
+        music_sources,
     )
 
 
@@ -604,11 +702,33 @@ def effective_metadata_sources(config: SourceConfig, artist: str, title: str):
 
 
 def format_source_list(config: SourceConfig) -> str:
+    primary = config.primary_music_source
     lines = [
         colors.heading("Available sources:"),
         "",
-        colors.heading("Metadata providers:"),
+        colors.heading("Music providers:"),
     ]
+
+    for name in MUSIC_PROVIDERS:
+        enabled = config.is_music_enabled(name)
+        status_text = "enabled" if enabled else "disabled"
+        status = (
+            colors.success(f"{status_text:<9}")
+            if enabled
+            else colors.muted(f"{status_text:<9}")
+        )
+        role = ""
+
+        if enabled:
+            role = " (primary)" if name == primary else " (fallback)"
+
+        lines.append(
+            f"  {colors.accent(f'{name:<12}')} {status} "
+            f"credentials: {colors.muted('not required  ')}"
+            f"{colors.muted(role.strip())}"
+        )
+
+    lines.extend(["", colors.heading("Metadata providers:")])
 
     for name in METADATA_PROVIDERS:
         entry = config.providers[name]
@@ -675,6 +795,17 @@ def format_source_list(config: SourceConfig) -> str:
         if config.soundcloud_enabled
         else colors.muted("disabled")
     )
+
+    if config.soundcloud_enabled and primary == "soundcloud":
+        soundcloud = colors.success(
+            "enabled (primary"
+            + (
+                "; YouTube fallback on failure)"
+                if config.youtube_enabled
+                else ")"
+            )
+        )
+
     ambiguous = (
         colors.success("take the best result")
         if getattr(config, "soundcloud_ambiguous", "skip") == "best"
@@ -683,6 +814,8 @@ def format_source_list(config: SourceConfig) -> str:
     lines.extend(
         [
             "",
+            f"{colors.label('Music priority:')} "
+            + colors.accent(", ".join(config.music_sources) or "none"),
             f"{colors.label('Metadata priority:')} "
             + colors.accent(", ".join(config.metadata_sources) or "none"),
             f"{colors.label('Match threshold:')} {config.match_threshold}",

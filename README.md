@@ -184,7 +184,7 @@ trackfetch "My Playlist.txt" -o ~/Music/"My Playlist"
 ## Usage
 
 ```text
-trackfetch [-h] [-v] [--track ARTIST - TITLE ...] [-o OUTPUT] [--config CONFIG] [-f {mp3,m4a,opus}] [--title-only] [--delay DELAY] [-s SOURCES] [--disable-sources SOURCES] [--provider-opt NAME.KEY=VALUE] [--match-threshold SCORE] [--title-threshold SCORE] [--list-sources] [--spotify-client-id ID] [--spotify-client-secret SECRET] [--no-logs] [--color {auto,always,never}] [--color-theme THEME] [--themes-file PATH] [--lyrics | --no-lyrics] [--lyrics-type {inline,sidecar,plain}] [INPUT ...]
+trackfetch [-h] [-v] [--track ARTIST - TITLE ...] [-o OUTPUT] [--config CONFIG] [-f {mp3,m4a,opus}] [--title-only] [--delay DELAY] [-s SOURCES] [--music-sources SOURCES] [--disable-sources SOURCES] [--provider-opt NAME.KEY=VALUE] [--match-threshold SCORE] [--title-threshold SCORE] [--list-sources] [--spotify-client-id ID] [--spotify-client-secret SECRET] [--no-logs] [--color {auto,always,never}] [--color-theme THEME] [--themes-file PATH] [--lyrics | --no-lyrics] [--lyrics-type {inline,sidecar,plain}] [INPUT ...]
 ```
 
 | Option | Default | What it does |
@@ -198,8 +198,10 @@ trackfetch [-h] [-v] [--track ARTIST - TITLE ...] [-o OUTPUT] [--config CONFIG] 
 | `--title-only` | off | Name files `Title.m4a` instead of `Artist - Title.m4a` |
 | `--delay` | `1.0` | Seconds to wait between songs. Raise it for long lists. |
 | `-s`, `--metadata-sources` | `itunes` | Comma-separated metadata priority, for example `deezer,itunes,musicbrainz`. `none` disables metadata lookups but keeps YouTube. A CLI selection overrides configured disabling for the selected providers. |
-| `--disable-sources` | — | Comma-separated sources to disable, for example `spotify,youtube` or `soundcloud`. Takes precedence over a CLI metadata selection for the same provider. |
-| `--soundcloud`, `--no-soundcloud` | on | Search SoundCloud instead of failing, controlled by `--soundcloud-trigger`. |
+| `--music-sources` | `youtube,soundcloud` | Comma-separated music priority: `youtube` or `soundcloud`. The default keeps YouTube primary and SoundCloud as the trigger-controlled fallback; `soundcloud,youtube` tries SoundCloud first. A CLI list overrides configured disabling for the named providers. |
+| `--youtube`, `--no-youtube` | on | Enable YouTube audio and its thumbnail fallback. `--no-youtube` leaves SoundCloud as the only music source. |
+| `--disable-sources` | — | Comma-separated sources to disable, for example `spotify,youtube` or `soundcloud`. Takes precedence over a CLI selection for the same provider. |
+| `--soundcloud`, `--no-soundcloud` | on | Enable SoundCloud as a music source. It is tried after YouTube by default, when `--soundcloud-trigger` allows it. |
 | `--soundcloud-trigger WHEN` | `age` | `age` (age-restricted videos only), `blocked` (also YouTube bot/login walls and members-only), `age-or-missing` (`blocked`, plus no confident YouTube match) or `any` (any failed search or download). |
 | `--soundcloud-ambiguous MODE` | `skip` | `skip` never downloads an ambiguous match without a terminal; `best` takes the highest scoring result, which non-interactive runs need. |
 | `--soundcloud-min-score` | `0.75` | Minimum candidate score before trackfetch downloads without asking. |
@@ -344,9 +346,9 @@ trackfetch songs.txt --match-threshold 0.7 --title-threshold 0.85
 ```
 
 CJK titles and recognizable Vocaloid hints temporarily promote VocaDB for that
-lookup. The configured order is not changed. YouTube remains enabled unless it
-is explicitly disabled, even with `-s none`. Disabling YouTube also disables
-the audio download, because YouTube is the only audio source.
+lookup. The configured order is not changed. Music providers are separate:
+YouTube and SoundCloud are configured with `music_sources`, so turning metadata
+lookups off with `-s none` still downloads audio.
 
 Provider failures are handled internally: after two consecutive real failures
 (for example a timeout or an HTTP server error) the provider cools down for
@@ -365,6 +367,45 @@ Artwork is identified by its actual bytes, not by the URL or the HTTP
 MIME type. MP3 and Opus can embed all four; M4A supports JPEG and PNG, so GIF or
 WebP artwork is skipped for that container instead of being mislabelled as
 JPEG.
+
+### Music sources
+
+YouTube and SoundCloud are the music providers. They are chosen separately from
+the metadata providers, in priority order:
+
+```ini
+[trackfetch]
+# Default: YouTube first, SoundCloud only when the trigger allows it
+music_sources = youtube,soundcloud
+```
+
+- `youtube,soundcloud` (default) keeps the old behaviour: YouTube is primary,
+  and SoundCloud is the fallback for the failures selected by
+  `soundcloud_trigger`.
+- `soundcloud,youtube` tries SoundCloud first and uses YouTube only when
+  SoundCloud finds no usable track.
+- `youtube` disables SoundCloud completely; `soundcloud` disables YouTube and
+  its thumbnail fallback.
+- At least one music source must remain. Disabling both stops with an error.
+
+The same options work from the command line:
+
+```bash
+trackfetch songs.txt --music-sources soundcloud,youtube
+trackfetch songs.txt --music-sources youtube          # no SoundCloud at all
+trackfetch songs.txt --no-youtube                     # SoundCloud only
+trackfetch songs.txt --no-soundcloud                  # YouTube only
+trackfetch songs.txt --disable-sources soundcloud     # same as --no-soundcloud
+```
+
+A CLI `--music-sources` list overrides the configured list and configured
+`youtube_enabled`/`soundcloud_enabled` flags for the providers it names. An
+explicit `--no-youtube`, `--no-soundcloud` or `--disable-sources` still wins.
+When a priority list is set explicitly, it is authoritative: only disable
+flags remove entries, while a stale `youtube_enabled = true` or
+`soundcloud_enabled = true` does not add a provider back. On the command line,
+`--youtube` and `--soundcloud` append a provider that is not in the list
+already.
 
 ### Lyrics
 
@@ -449,6 +490,9 @@ input = ~/songs.txt
 # Metadata source priority
 metadata_sources = deezer,itunes,musicbrainz,vocadb
 
+# Music source priority
+music_sources = youtube,soundcloud
+
 # Sources to exclude
 disable_sources = spotify
 
@@ -476,11 +520,11 @@ musicbrainz_min_interval = 1.1
 vocadb_enabled = true
 vocadb_min_interval = 0.5
 
-# YouTube artwork fallback
+# Music providers (independent of metadata)
 youtube_enabled = true
+soundcloud_enabled = true
 
 # SoundCloud fallback for age-restricted YouTube videos
-soundcloud_enabled = true
 soundcloud_trigger = age
 soundcloud_ambiguous = skip
 soundcloud_min_score = 0.75
@@ -510,8 +554,9 @@ precedence is always the same:
 For source selection, a CLI `-s` list overrides both `metadata_sources` and
 conflicting `disable_sources`/`*_enabled=false` entries for the providers it
 names. An explicit CLI disable from `--disable-sources` or
-`--provider-opt NAME.enabled=false` wins over a CLI selection. The config file
-itself is never rewritten.
+`--provider-opt NAME.enabled=false` wins over a CLI selection. Music providers
+follow the same rules with `music_sources`, `youtube_enabled` and
+`soundcloud_enabled`. The config file itself is never rewritten.
 
 trackfetch looks for the config file in this order: the path given with
 `--config`, the path in `$TRACKFETCH_CONFIG`, `trackfetch.ini` in the current
@@ -602,7 +647,7 @@ A [tldr](https://tldr.sh/) page is in [`docs/tldr/trackfetch.md`](https://github
 ## How it works
 
 1. **Find the metadata.** trackfetch queries the configured providers in priority order. Every result is scored by fuzzy similarity, 70% title and 30% artist. Both the overall `match_threshold` and the `title_threshold` must pass, so an unrelated result is rejected instead of being used. If every query misses, provider searches are retried with looser phrasing, and the configured providers are followed by the `deezer` and `musicbrainz` fallbacks. The winning result supplies the title, artists, album details, release date, duration and artwork.
-2. **Find the audio on YouTube.** It searches YouTube for the official artist and title and scores the top five results:
+2. **Find the audio.** With the default `music_sources = youtube,soundcloud`, it searches YouTube first and scores the top five results:
 
    | Signal | Effect on the score |
    | --- | --- |
@@ -617,7 +662,7 @@ A [tldr](https://tldr.sh/) page is in [`docs/tldr/trackfetch.md`](https://github
    If the artist query finds nothing, trackfetch retries with `<title>` and then `<title> Topic`; title-only results need artist evidence, so covers and same-title songs by other artists are rejected. When all three find nothing usable, it falls back to the YouTube Music search, which is not filtered for some topics the way anonymous YouTube search is. Each YouTube Music candidate is checked against its full video details: the title must be close, the artist (or channel) must match, and known durations may differ by at most 10 seconds.
 
 3. **Download.** yt-dlp downloads only the winning video and converts it to the chosen format. `m4a` and `opus` keep YouTube's original audio, `mp3` re-encodes it.
-4. **SoundCloud fallback.** If YouTube fails in the way `soundcloud_trigger` allows — by default only an age restriction (`Sign in to confirm your age`) — trackfetch searches SoundCloud for an independently available copy with yt-dlp's `scsearch`. This is not a bypass of YouTube's age verification: no cookies, credentials or alternate clients are used, and every other error (network, unavailable, private, invalid URL) keeps the normal failure handling. Up to five results are scored, 40% title, 30% artist, 20% duration and 10% metadata consistency. Previews (including the 30-second sample), remixes, covers, live and instrumental versions are rejected. Only a single result above `soundcloud_min_score` and clearly ahead of the runner-up is downloaded automatically. When several results are equally plausible, `soundcloud_ambiguous` decides: `skip` prints the options and asks on a terminal (a piped or `nohup` run skips the song), while `best` takes the highest scoring result without asking. Metadata is fetched with `--dump-single-json` before anything is downloaded, and a fallback is attempted at most once per song.
+4. **SoundCloud fallback.** When SoundCloud is second in `music_sources` (the default) and YouTube fails in the way `soundcloud_trigger` allows — by default only an age restriction (`Sign in to confirm your age`) — trackfetch searches SoundCloud for an independently available copy with yt-dlp's `scsearch`. With `music_sources = soundcloud,youtube` the order is reversed: SoundCloud is searched first and YouTube is tried only when SoundCloud finds no usable track. This is not a bypass of YouTube's age verification: no cookies, credentials or alternate clients are used, and every other YouTube error (network, unavailable, private, invalid URL) keeps the normal failure handling. Up to five results are scored, 40% title, 30% artist, 20% duration and 10% metadata consistency. Previews (including the 30-second sample), remixes, covers, live and instrumental versions are rejected. Only a single result above `soundcloud_min_score` and clearly ahead of the runner-up is downloaded automatically. When several results are equally plausible, `soundcloud_ambiguous` decides: `skip` prints the options and asks on a terminal (a piped or `nohup` run skips the song), while `best` takes the highest scoring result without asking. Metadata is fetched with `--dump-single-json` before anything is downloaded, and a fallback is attempted at most once per song.
 5. **Tag.** trackfetch replaces any existing tags with these ID3v2.3 frames:
 
    | Frame | Content |

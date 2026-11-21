@@ -122,8 +122,7 @@ def build_parser():
         prog="trackfetch",
         usage="%(prog)s [OPTIONS] [INPUT ...]",
         description=(
-            "Download music using configurable free metadata "
-            "sources and YouTube audio"
+            "Download music using free metadata sources and music providers"
         ),
         epilog=EPILOG,
         formatter_class=TrackFetchHelpFormatter,
@@ -214,6 +213,17 @@ def build_parser():
     )
 
     metadata_group.add_argument(
+        "--music-sources",
+        default=None,
+        metavar="SOURCES",
+        help=(
+            "Comma-separated music priority, for example "
+            "'soundcloud,youtube' or 'youtube' "
+            "(default: youtube,soundcloud)"
+        ),
+    )
+
+    metadata_group.add_argument(
         "--disable-sources",
         default=None,
         metavar="SOURCES",
@@ -251,13 +261,25 @@ def build_parser():
     )
 
     metadata_group.add_argument(
+        "--youtube",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        dest="youtube_enabled",
+        help=(
+            "Download from YouTube and use its thumbnails; disable it to "
+            "use SoundCloud only (default: on)"
+        ),
+    )
+
+    metadata_group.add_argument(
         "--soundcloud",
         action=argparse.BooleanOptionalAction,
         default=None,
         dest="soundcloud_enabled",
         help=(
-            "Try SoundCloud when YouTube blocks a video with an age "
-            "restriction; never used for other errors (default: on)"
+            "Enable SoundCloud as a music source. It is tried after YouTube "
+            "by default, when --soundcloud-trigger allows it "
+            "(default: on)"
         ),
     )
 
@@ -770,6 +792,10 @@ def main():
     print(f"{colors.label('Output:')} {args.output}")
 
     print(
+        f"{colors.label('Music sources:')} "
+        + colors.accent(", ".join(source_config.music_sources) or "none")
+    )
+    print(
         f"{colors.label('Metadata sources:')} "
         + colors.accent(", ".join(source_config.metadata_sources) or "none")
     )
@@ -795,17 +821,23 @@ def main():
         "age-or-missing": "blocked, or no YouTube match",
         "any": "any failed YouTube search or download",
     }
+
+    if source_config.primary_music_source == "soundcloud":
+        soundcloud_status = "primary" + (
+            "; YouTube fallback on failure"
+            if source_config.youtube_enabled
+            else ""
+        )
+    else:
+        soundcloud_status = trigger_labels.get(
+            source_config.soundcloud_trigger,
+            source_config.soundcloud_trigger,
+        )
+
     print(
         f"{colors.label('SoundCloud fallback:')} "
         + (
-            colors.success(
-                "enabled ("
-                + trigger_labels.get(
-                    source_config.soundcloud_trigger,
-                    source_config.soundcloud_trigger,
-                )
-                + ")"
-            )
+            colors.success("enabled (" + soundcloud_status + ")")
             if source_config.soundcloud_enabled
             else colors.muted("disabled")
         )

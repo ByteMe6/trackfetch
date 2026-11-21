@@ -1,6 +1,6 @@
 # trackfetch
 
-> Download songs listed in a text file as tagged MP3, M4A or Opus files, using configurable free metadata sources and YouTube audio.
+> Download songs listed in a text file as tagged MP3, M4A or Opus files, using configurable free metadata sources and music providers (YouTube and SoundCloud).
 > Requires `yt-dlp` and `ffmpeg`. Spotify is optional and only used when selected.
 > More information: <https://github.com/ByteMe6/trackfetch#usage>.
 
@@ -40,9 +40,21 @@
 
 `trackfetch {{path/to/songs.txt}} {{[-s|--metadata-sources]}} none`
 
-- Disable a source (disabling YouTube also disables audio downloads):
+- Use a custom music priority (default: `youtube,soundcloud`):
 
-`trackfetch {{path/to/songs.txt}} --disable-sources {{youtube}}`
+`trackfetch {{path/to/songs.txt}} --music-sources {{soundcloud,youtube}}`
+
+- Use SoundCloud only, without YouTube:
+
+`trackfetch {{path/to/songs.txt}} --no-youtube`
+
+- Use YouTube only, without the SoundCloud fallback:
+
+`trackfetch {{path/to/songs.txt}} --no-soundcloud`
+
+- Disable a source:
+
+`trackfetch {{path/to/songs.txt}} --disable-sources {{spotify}}`
 
 - Require a stricter match; both thresholds accept only finite values from 0.0 to 1.0:
 

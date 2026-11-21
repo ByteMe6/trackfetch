@@ -446,6 +446,9 @@ input = ~/songs.txt
 # Приоритет источников метаданных
 metadata_sources = deezer,itunes,musicbrainz,vocadb
 
+# Приоритет музыкальных источников
+music_sources = youtube,soundcloud
+
 # Исключённые источники
 disable_sources = spotify
 
@@ -473,8 +476,11 @@ musicbrainz_min_interval = 1.1
 vocadb_enabled = true
 vocadb_min_interval = 0.5
 
-# Запасная обложка YouTube
+# Музыкальные источники
 youtube_enabled = true
+soundcloud_enabled = true
+soundcloud_trigger = age
+soundcloud_ambiguous = skip
 
 # Встраивание текста песни в теги файла
 lyrics_enabled = true
